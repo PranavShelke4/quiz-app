@@ -15,7 +15,7 @@ import { Competition } from "@/models/Competition";
 import { CompetitionParticipant } from "@/models/CompetitionParticipant";
 import { DailyAnswer } from "@/models/DailyAnswer";
 import { Question } from "@/models/Question";
-import { call, correctFor, createRunningCompetition, createUser, dayMiddle, sessionCookieFor, setNow, wrongFor } from "../helpers/fixtures";
+import { call, correctFor, createRunningCompetition, createUser, dayMiddle, joinComp, sessionCookieFor, setNow, wrongFor } from "../helpers/fixtures";
 
 async function adminCookie() {
   const admin = await createUser({ role: "ADMIN", name: "Admin" });
@@ -83,6 +83,7 @@ describe("Admin: competition + question workflow", () => {
     const cookie = await adminCookie();
     const comp = await createRunningCompetition({ startOffsetDays: -1, durationDays: 3 });
     const player = await createUser();
+    await joinComp(comp, player._id);
     const pc = await sessionCookieFor(player._id);
     setNow(dayMiddle(comp, 1));
     await call(submitRoute, { cookie: pc, body: { optionId: wrongFor(1) } });
@@ -105,6 +106,7 @@ describe("Admin: competition + question workflow", () => {
   it("manual reveal: hidden until an admin reveals after the end; hide/reveal are audited", async () => {
     const comp = await createRunningCompetition({ startOffsetDays: -1, durationDays: 2, revealMode: "MANUAL" });
     const player = await createUser();
+    await joinComp(comp, player._id);
     const pc = await sessionCookieFor(player._id);
     setNow(dayMiddle(comp, 1));
     await call(submitRoute, { cookie: pc, body: { optionId: correctFor(1) } });
@@ -128,6 +130,7 @@ describe("Admin: competition + question workflow", () => {
     const cookie = await adminCookie();
     const comp = await createRunningCompetition({ startOffsetDays: -1, durationDays: 2 });
     const player = await createUser({ name: "=cmd|' /C calc'!A0" });
+    await joinComp(comp, player._id);
     setNow(dayMiddle(comp, 2));
     await call(submitRoute, { cookie: await sessionCookieFor(player._id), body: { optionId: correctFor(2) } });
     const res = await call(exportAnswersRoute, { cookie, url: `/api/admin/answers/export?competitionId=${comp._id}` });
@@ -141,6 +144,7 @@ describe("Admin: competition + question workflow", () => {
     const cookie = await adminCookie();
     const comp = await createRunningCompetition({ startOffsetDays: -1, durationDays: 2 });
     const player = await createUser();
+    await joinComp(comp, player._id);
     const pc = await sessionCookieFor(player._id);
     setNow(dayMiddle(comp, 1));
     await call(submitRoute, { cookie: pc, body: { optionId: correctFor(1) } });

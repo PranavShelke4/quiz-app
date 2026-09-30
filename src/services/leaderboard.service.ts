@@ -141,6 +141,7 @@ export interface LeaderboardEntryDTO {
   rank: number;
   overallRank?: number;
   name: string;
+  email: string | null;
   team: string;
   avatar: string | null;
   isMe: boolean;
@@ -163,7 +164,7 @@ export interface TeamStandingDTO {
   totalParticipants: number;
 }
 
-function toEntry(p: ICompetitionParticipant, user: { name: string; avatar: string | null; team?: string } | undefined, comp: ICompetition, meId?: string, teamRank?: number): LeaderboardEntryDTO {
+function toEntry(p: ICompetitionParticipant, user: { name: string; email?: string; avatar: string | null; team?: string } | undefined, comp: ICompetition, meId?: string, teamRank?: number): LeaderboardEntryDTO {
   const correct = p.finalCorrect ?? p.correctAnswers;
   const wrong = p.finalWrong ?? p.wrongAnswers;
   const answered = correct + wrong;
@@ -171,6 +172,7 @@ function toEntry(p: ICompetitionParticipant, user: { name: string; avatar: strin
     rank: teamRank ?? p.finalRank ?? 0,
     overallRank: p.finalRank ?? 0,
     name: user?.name ?? "Former participant",
+    email: user?.email ?? null,
     team: p.team || user?.team || "General",
     avatar: user?.avatar ?? null,
     isMe: String(p.userId) === meId,
@@ -207,7 +209,7 @@ export async function getPublicLeaderboard(params: { userId?: Types.ObjectId; te
     .lean();
 
   const allUserIds = allParticipants.map((p) => p.userId);
-  const users = await User.find({ _id: { $in: allUserIds } }).select("name avatar team").lean();
+  const users = await User.find({ _id: { $in: allUserIds } }).select("name email avatar team").lean();
   const userMap = new Map(users.map((u) => [String(u._id), u]));
 
   // Compute team standings

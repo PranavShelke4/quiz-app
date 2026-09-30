@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { CalendarClock, CheckCircle2, Clock, Hourglass, Trophy } from "lucide-react";
+import { CalendarClock, CheckCircle2, Clock, Hourglass, Lock, Trophy } from "lucide-react";
 import { Countdown } from "@/components/countdown";
 import { nextQuestionLabel } from "@/components/quiz/format";
 import { JoinButton } from "@/components/quiz/join-button";
@@ -62,9 +62,6 @@ export default async function QuizPage() {
   const p = state.progress;
   const label = nextQuestionLabel(state.nextQuestionAt, c.serverTime, c.timezone);
 
-  let blockedReason: string | undefined;
-  if (!state.isParticipant && !state.canJoin) blockedReason = "Registration for this competition is closed.";
-
   return (
     <div className="mx-auto max-w-[700px] space-y-6">
       <header className="space-y-3">
@@ -115,6 +112,21 @@ export default async function QuizPage() {
             </div>
           )}
         </Card>
+      ) : today.status === "LOCKED" ? (
+        <Card className="text-center p-8 space-y-4">
+          <Lock className="mx-auto size-12 text-primary" aria-hidden />
+          <h2 className="text-2xl font-semibold">Join to unlock today&apos;s question</h2>
+          <p className="text-muted-foreground">
+            {state.canJoin
+              ? `The Day ${c.currentDay} question and its options are only shown to participants of ${c.name}.`
+              : "Registration for this competition is closed, so its questions aren't available to you."}
+          </p>
+          {state.canJoin && (
+            <div className="flex justify-center pt-2">
+              <JoinButton />
+            </div>
+          )}
+        </Card>
       ) : today.status === "UNAVAILABLE" ? (
         <EmptyState icon={<Hourglass />} title="Today's question isn't available yet" description="Please check back shortly." />
       ) : (
@@ -127,8 +139,7 @@ export default async function QuizPage() {
           closesAt={today.closesAt}
           serverTime={c.serverTime}
           nextQuestionLabel={label}
-          canSubmit={!blockedReason}
-          blockedReason={blockedReason}
+          canSubmit
         />
       )}
 

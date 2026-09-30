@@ -19,6 +19,7 @@ export default async function LeaderboardPage({ searchParams }: PageProps<"/lead
   const sp = await searchParams;
   const page = Math.max(1, Number(typeof sp.page === "string" ? sp.page : 1) || 1);
   const teamFilter = typeof sp.team === "string" && sp.team.trim() && sp.team !== "All" ? sp.team.trim() : undefined;
+  const href = (team?: string) => (team ? `/leaderboard?team=${encodeURIComponent(team)}` : "/leaderboard");
 
   let data: Awaited<ReturnType<typeof getPublicLeaderboard>>;
   try {
@@ -88,57 +89,6 @@ export default async function LeaderboardPage({ searchParams }: PageProps<"/lead
         </section>
       )}
 
-      {teamStandings && teamStandings.length > 0 && (
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <CardTitle className="flex items-center gap-2">
-                <Building2 className="size-5 text-primary" aria-hidden /> Company Team Standings
-              </CardTitle>
-              <span className="text-xs text-muted-foreground">Ranked by average score</span>
-            </div>
-          </CardHeader>
-          <Table>
-            <THead>
-              <tr>
-                <TH className="w-16">Rank</TH>
-                <TH>Team</TH>
-                <TH className="text-right">Participants</TH>
-                <TH className="text-right">Avg Score</TH>
-                <TH className="text-right">Total Points</TH>
-                <TH className="text-right">Action</TH>
-              </tr>
-            </THead>
-            <TBody>
-              {teamStandings.map((ts) => (
-                <TR key={ts.team} className={cn(teamFilter === ts.team && "bg-primary-soft/40")}>
-                  <TD className="font-semibold tabular-nums">
-                    {ts.rank <= 3 ? ["🥇", "🥈", "🥉"][ts.rank - 1] : `#${ts.rank}`}
-                  </TD>
-                  <TD className="font-medium">
-                    <span className="flex items-center gap-2">
-                      {ts.team}
-                      {teamFilter === ts.team && <Badge tone="primary">Current View</Badge>}
-                    </span>
-                  </TD>
-                  <TD className="text-right tabular-nums">{ts.totalParticipants}</TD>
-                  <TD className="text-right font-semibold tabular-nums text-primary">{ts.avgScore}</TD>
-                  <TD className="text-right tabular-nums text-muted-foreground">{ts.totalScore}</TD>
-                  <TD className="text-right">
-                    <Link
-                      href={teamFilter === ts.team ? "/leaderboard" : `/leaderboard?team=${encodeURIComponent(ts.team)}`}
-                      className="text-xs font-medium text-primary hover:underline"
-                    >
-                      {teamFilter === ts.team ? "View all" : "View team"}
-                    </Link>
-                  </TD>
-                </TR>
-              ))}
-            </TBody>
-          </Table>
-        </Card>
-      )}
-
       <Card>
         <CardHeader className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -154,11 +104,10 @@ export default async function LeaderboardPage({ searchParams }: PageProps<"/lead
             </span>
             {filterOptions.map((t) => {
               const isSelected = (!teamFilter && t === "All") || teamFilter === t;
-              const href = t === "All" ? "/leaderboard" : `/leaderboard?team=${encodeURIComponent(t)}`;
               return (
                 <Link
                   key={t}
-                  href={href}
+                  href={t === "All" ? href() : href(t)}
                   className={cn(
                     "inline-flex items-center rounded-full px-3 py-1 text-xs font-medium transition-colors",
                     isSelected
@@ -212,8 +161,13 @@ export default async function LeaderboardPage({ searchParams }: PageProps<"/lead
                     <TD>
                       <div className="flex items-center gap-2">
                         <Avatar name={e.name} src={e.avatar} />
-                        <span className="font-medium">{e.name}</span>
-                        {e.isMe && <Badge tone="primary">You</Badge>}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{e.name}</span>
+                            {e.isMe && <Badge tone="primary">You</Badge>}
+                          </div>
+                          {e.email && <span className="block truncate text-xs text-muted-foreground">{e.email}</span>}
+                        </div>
                       </div>
                     </TD>
                     <TD>
@@ -240,6 +194,57 @@ export default async function LeaderboardPage({ searchParams }: PageProps<"/lead
           </>
         )}
       </Card>
+
+      {teamStandings && teamStandings.length > 0 && (
+        <Card>
+          <CardHeader>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="size-5 text-primary" aria-hidden /> Company Team Standings
+              </CardTitle>
+              <span className="text-xs text-muted-foreground">Ranked by average score</span>
+            </div>
+          </CardHeader>
+          <Table>
+            <THead>
+              <tr>
+                <TH className="w-16">Rank</TH>
+                <TH>Team</TH>
+                <TH className="text-right">Participants</TH>
+                <TH className="text-right">Avg Score</TH>
+                <TH className="text-right">Total Points</TH>
+                <TH className="text-right">Action</TH>
+              </tr>
+            </THead>
+            <TBody>
+              {teamStandings.map((ts) => (
+                <TR key={ts.team} className={cn(teamFilter === ts.team && "bg-primary-soft/40")}>
+                  <TD className="font-semibold tabular-nums">
+                    {ts.rank <= 3 ? ["🥇", "🥈", "🥉"][ts.rank - 1] : `#${ts.rank}`}
+                  </TD>
+                  <TD className="font-medium">
+                    <span className="flex items-center gap-2">
+                      {ts.team}
+                      {teamFilter === ts.team && <Badge tone="primary">Current View</Badge>}
+                    </span>
+                  </TD>
+                  <TD className="text-right tabular-nums">{ts.totalParticipants}</TD>
+                  <TD className="text-right font-semibold tabular-nums text-primary">{ts.avgScore}</TD>
+                  <TD className="text-right tabular-nums text-muted-foreground">{ts.totalScore}</TD>
+                  <TD className="text-right">
+                    <Link
+                      href={teamFilter === ts.team ? href() : href(ts.team)}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      {teamFilter === ts.team ? "View all" : "View team"}
+                    </Link>
+                  </TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        </Card>
+      )}
     </div>
   );
 }

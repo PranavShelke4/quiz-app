@@ -66,7 +66,10 @@ export default async function DashboardPage() {
                 <Countdown target={c.startsAt} serverTime={c.serverTime} />
               </div>
             )}
-            {c.phase === "ACTIVE" && today?.status === "OPEN" && (state.isParticipant || state.canJoin) && (
+            {c.phase === "ACTIVE" && today?.status === "LOCKED" && state.canJoin && (
+              <p className="text-sm text-muted-foreground">Today&apos;s question is live. Join to unlock it.</p>
+            )}
+            {c.phase === "ACTIVE" && today?.status === "OPEN" && (
               <div className="flex flex-wrap items-center gap-3">
                 <ButtonLink href="/quiz" size="lg">
                   Start Quiz <ArrowRight />

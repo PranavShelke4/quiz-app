@@ -9,13 +9,14 @@ import { GET as resultsRoute } from "@/app/api/results/route";
 import { CompetitionParticipant } from "@/models/CompetitionParticipant";
 import { DailyAnswer } from "@/models/DailyAnswer";
 import { Competition } from "@/models/Competition";
-import { call, correctFor, createRunningCompetition, createUser, dayMiddle, sessionCookieFor, setNow, wrongFor } from "../helpers/fixtures";
+import { call, correctFor, createRunningCompetition, createUser, dayMiddle, joinComp, sessionCookieFor, setNow, wrongFor } from "../helpers/fixtures";
 
 const CRON = { authorization: `Bearer ${process.env.CRON_SECRET}` };
 
 async function setup(opts: Parameters<typeof createRunningCompetition>[0] = {}) {
   const comp = await createRunningCompetition({ startOffsetDays: -2, durationDays: 5, ...opts });
   const user = await createUser();
+  await joinComp(comp, user._id);
   const cookie = await sessionCookieFor(user._id);
   return { comp, user, cookie };
 }
@@ -141,6 +142,7 @@ describe("Business rules", () => {
   it("Case 8: after the competition ends the leaderboard and results become available", async () => {
     const { comp, user, cookie } = await setup({ startOffsetDays: -1, durationDays: 3 });
     const rival = await createUser({ name: "Rival" });
+    await joinComp(comp, rival._id);
     const rivalCookie = await sessionCookieFor(rival._id);
     for (const day of [1, 2, 3]) {
       setNow(dayMiddle(comp, day));
@@ -154,8 +156,8 @@ describe("Business rules", () => {
     expect(res.status).toBe(200);
     expect(res.json.data.entries.map((e: { name: string; rank: number }) => [e.name, e.rank])).toEqual([["Test User", 1], ["Rival", 2]]);
     expect(res.json.data.me).toMatchObject({ rank: 1, score: 3, correct: 3, wrong: 0, missed: 0, isMe: true });
-    // Emails are never exposed on the public leaderboard.
-    expect(res.text).not.toContain("@example.com");
+    // Emails are shown to signed-in participants on the leaderboard.
+    expect(res.json.data.me.email).toMatch(/@example\.com$/);
 
     const stored = await Competition.findById(comp._id).lean();
     expect(stored).toMatchObject({ status: "COMPLETED", leaderboardRevealed: true });

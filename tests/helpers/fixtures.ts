@@ -9,6 +9,7 @@ import type { OptionId } from "@/lib/validation/quiz";
 import { Competition, type ICompetition } from "@/models/Competition";
 import { Question } from "@/models/Question";
 import { User, type Role } from "@/models/User";
+import { joinCompetition } from "@/services/participant.service";
 import type { SessionKind } from "@/models/Session";
 
 export const TZ = "Asia/Kolkata";
@@ -93,6 +94,11 @@ export async function createRunningCompetition(opts: {
   });
   await Question.insertMany(docs);
   return comp.toObject();
+}
+
+/** Joins a user to a competition as of its start (questions are only shown to participants). */
+export async function joinComp(comp: ICompetition, userId: Types.ObjectId) {
+  return joinCompetition(comp, userId, { at: comp.startDate });
 }
 
 /** Moves the (faked) Date clock; Mongo I/O timers keep running for real. */

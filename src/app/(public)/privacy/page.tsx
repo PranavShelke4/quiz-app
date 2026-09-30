@@ -28,7 +28,7 @@ export default function PrivacyPage() {
       </section>
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">What others can see</h2>
-        <p>After results are revealed, your display name, avatar, rank and score appear on the leaderboard. Your email address is never shown publicly.</p>
+        <p>After results are revealed, your display name, email address, avatar, rank and score appear on the leaderboard, which only signed-in participants can see.</p>
       </section>
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Cookies</h2>

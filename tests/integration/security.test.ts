@@ -15,13 +15,14 @@ import { CompetitionParticipant } from "@/models/CompetitionParticipant";
 import { DailyAnswer } from "@/models/DailyAnswer";
 import { User } from "@/models/User";
 import { proxy } from "@/proxy";
-import { PASSWORD, call, correctFor, createRunningCompetition, createUser, dayMiddle, sessionCookieFor, setNow, wrongFor } from "../helpers/fixtures";
+import { PASSWORD, call, correctFor, createRunningCompetition, createUser, dayMiddle, joinComp, sessionCookieFor, setNow, wrongFor } from "../helpers/fixtures";
 
 describe("API manipulation attacks", () => {
   async function running() {
     const comp = await createRunningCompetition({ startOffsetDays: -2, durationDays: 5 });
     const user = await createUser();
     const victim = await createUser({ name: "Victim" });
+    await joinComp(comp, user._id);
     const cookie = await sessionCookieFor(user._id);
     setNow(dayMiddle(comp, 3));
     return { comp, user, victim, cookie };

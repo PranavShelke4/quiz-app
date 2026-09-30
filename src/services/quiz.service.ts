@@ -67,6 +67,8 @@ export interface QuizStateDTO {
     | { status: "OPEN"; dayNumber: number; opensAt: string; closesAt: string; question: UserQuestionDTO }
     | { status: "ANSWERED"; dayNumber: number; opensAt: string; closesAt: string; submittedAt: string; selectedOptionId: OptionId; question: UserQuestionDTO }
     | { status: "UNAVAILABLE"; dayNumber: number; opensAt: string; closesAt: string }
+    /** The question is live but the user hasn't joined — its text and options are withheld. */
+    | { status: "LOCKED"; dayNumber: number; opensAt: string; closesAt: string }
     | { status: "UPCOMING"; dayNumber: number; opensAt: string; closesAt: string }
     | { status: "CLOSED"; dayNumber: number; opensAt: string; closesAt: string }
     | null;
@@ -157,6 +159,8 @@ export async function getQuizState(userId: Types.ObjectId, at: Date = now()): Pr
 
   const question = await Question.findOne({ competitionId: comp._id, dayNumber, status: "PUBLISHED" }).lean();
   if (!question) return { ...base, today: { status: "UNAVAILABLE", dayNumber, opensAt, closesAt } };
+  // Only participants ever receive the question text and options.
+  if (!participant) return { ...base, today: { status: "LOCKED", dayNumber, opensAt, closesAt } };
 
   if (answer?.status === "ANSWERED" && answer.selectedOptionId && answer.answeredAt) {
     return {
@@ -179,10 +183,11 @@ export async function getQuizState(userId: Types.ObjectId, at: Date = now()): Pr
  * Access to a specific day's question (e.g. GET /api/questions/:day).
  * Past days → QUESTION_EXPIRED, future days → QUESTION_NOT_AVAILABLE, today → question.
  */
-export async function getQuestionForDay(dayParam: string, at: Date = now()): Promise<UserQuestionDTO> {
+export async function getQuestionForDay(userId: Types.ObjectId, dayParam: string, at: Date = now()): Promise<UserQuestionDTO> {
   await connectDb();
   const comp = await getCurrentCompetition(at);
   if (!comp) throw new AppError("COMPETITION_NOT_FOUND");
+  if (!(await getParticipant(comp._id, userId))) throw new AppError("NOT_PARTICIPANT", "Join the competition to see its questions.");
   const clock = clockFor(comp, at);
   const day = /^\d{1,3}$/.test(dayParam) ? Number(dayParam) : NaN;
   if (clock.phase === "NOT_STARTED") throw new AppError("COMPETITION_NOT_STARTED");
@@ -240,6 +245,7 @@ export async function submitAnswer(params: {
 
   const user = await User.findById(params.userId).select("isActive").lean();
   if (!user || !user.isActive) throw new AppError("USER_DISABLED");
+  if (!(await getParticipant(comp._id, params.userId))) throw new AppError("NOT_PARTICIPANT", "Join the competition before answering.");
 
   const question = await Question.findOne({ competitionId: comp._id, dayNumber, status: "PUBLISHED" }).lean();
   if (!question) throw new AppError("QUESTION_NOT_AVAILABLE");
@@ -266,8 +272,6 @@ export async function submitAnswer(params: {
       // Re-check the window at write time (the request may have waited on the transaction).
       if (now().getTime() < window.opensAt.getTime()) throw new AppError("QUESTION_NOT_AVAILABLE");
       if (now().getTime() >= window.closesAt.getTime()) throw new AppError("QUESTION_EXPIRED");
-
-      await joinCompetition(comp, params.userId, { session, at });
 
       const existing = await DailyAnswer.findOne({ competitionId: comp._id, userId: params.userId, dayNumber })
         .select("status")
