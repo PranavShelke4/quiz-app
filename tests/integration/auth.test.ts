@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { POST as changePasswordRoute } from "@/app/api/auth/change-password/route";
-import { POST as forgotRoute } from "@/app/api/auth/forgot-password/route";
 import { POST as loginRoute } from "@/app/api/auth/login/route";
 import { POST as logoutRoute } from "@/app/api/auth/logout/route";
 import { POST as resetRoute } from "@/app/api/auth/reset-password/route";
@@ -9,7 +8,8 @@ import { POST as signupRoute } from "@/app/api/auth/signup/route";
 import { POST as adminLoginRoute } from "@/app/api/admin/auth/login/route";
 import { User } from "@/models/User";
 import { Session } from "@/models/Session";
-import { PASSWORD, call, cookieFromResponse, createUser, sentEmails } from "../helpers/fixtures";
+import { createPasswordResetLink } from "@/services/auth.service";
+import { PASSWORD, call, cookieFromResponse, createUser } from "../helpers/fixtures";
 
 const tokenFrom = (text: string) => /token=([A-Za-z0-9_-]+)/.exec(text)?.[1] ?? "";
 
@@ -76,23 +76,17 @@ describe("Authentication", () => {
     expect(res.json.error?.code).toBe("USER_DISABLED");
   });
 
-  it("password reset: no enumeration, one-time token, revokes all sessions", async () => {
+  it("password reset: admin-issued one-time link, revokes all sessions", async () => {
     const user = await createUser({ email: "reset@example.com" });
     const login = await call(loginRoute, { body: { email: "reset@example.com", password: PASSWORD } });
     const oldCookie = cookieFromResponse(login.headers)!;
 
-    const a = await call(forgotRoute, { body: { email: "reset@example.com" } });
-    const b = await call(forgotRoute, { body: { email: "missing@example.com" } });
-    expect(a.json).toEqual(b.json);
-    expect(sentEmails).toHaveLength(1);
-
-    const token = tokenFrom(sentEmails[0]!.text);
+    const token = tokenFrom(await createPasswordResetLink(user._id));
     const newPassword = "N3w!Password99";
     expect((await call(resetRoute, { body: { token, password: newPassword } })).status).toBe(200);
     expect((await call(resetRoute, { body: { token, password: newPassword } })).json.error?.code).toBe("INVALID_TOKEN");
     expect((await call(sessionRoute, { cookie: oldCookie })).json.data.authenticated).toBe(false);
     expect((await call(loginRoute, { body: { email: "reset@example.com", password: newPassword } })).status).toBe(200);
-    expect(user).toBeTruthy();
   });
 
   it("change password rotates the session and signs out other devices", async () => {

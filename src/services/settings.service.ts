@@ -51,7 +51,6 @@ export const generalSettingsSchema = z.object({
       dailyReminderHour: z.number().int().min(0).max(23),
       deadlineReminderEnabled: z.boolean(),
       deadlineReminderHoursBefore: z.number().int().min(1).max(12),
-      resultEmailEnabled: z.boolean(),
     })
     .partial()
     .optional(),

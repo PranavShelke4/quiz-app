@@ -47,7 +47,6 @@ export default defineConfig({
         MONGODB_URI: `mongodb://127.0.0.1:${DB_PORT}/?replicaSet=testset`,
         MONGODB_DB: "quiz_app_e2e",
         NEXT_PUBLIC_APP_URL: baseURL,
-        EMAIL_PROVIDER: "console",
         CRON_SECRET: E2E_SECRETS.cron,
         ADMIN_SETUP_SECRET: E2E_SECRETS.setup,
       },

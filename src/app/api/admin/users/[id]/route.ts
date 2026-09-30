@@ -4,7 +4,7 @@ import { apiRoute } from "@/lib/api/handler";
 import { hasPermission } from "@/lib/auth/rbac";
 import { AppError } from "@/lib/errors";
 import {
-  adminSendPasswordReset,
+  adminCreateResetLink,
   changeUserRole,
   forceLogout,
   getUserDetail,
@@ -36,8 +36,7 @@ export const POST = apiRoute<{ id: string }>("admin", { permission: "users:manag
       await forceLogout(id, actor);
       break;
     case "reset-password":
-      await adminSendPasswordReset(id, actor);
-      break;
+      return { ok: true, resetUrl: await adminCreateResetLink(id, actor) };
     case "change-role":
       if (!hasPermission(actor.role, "admins:manage")) throw new AppError("FORBIDDEN", "Only a super admin can change roles.");
       await changeUserRole(id, input.role, actor);

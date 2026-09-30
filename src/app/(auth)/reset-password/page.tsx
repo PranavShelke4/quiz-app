@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { ResetPasswordForm } from "@/components/auth/auth-forms";
-import { ButtonLink } from "@/components/ui/button";
 import { Alert, Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/primitives";
 import { tokenSchema } from "@/lib/validation/auth";
 
@@ -19,12 +18,7 @@ export default async function ResetPasswordPage({ searchParams }: PageProps<"/re
         {valid ? (
           <ResetPasswordForm token={token} />
         ) : (
-          <div className="space-y-4">
-            <Alert tone="danger" title="Invalid link">This reset link is invalid or incomplete.</Alert>
-            <ButtonLink href="/forgot-password" variant="outline" className="w-full">
-              Request a new link
-            </ButtonLink>
-          </div>
+          <Alert tone="danger" title="Invalid link">This reset link is invalid or incomplete. Ask an admin for a new one.</Alert>
         )}
       </CardContent>
     </Card>

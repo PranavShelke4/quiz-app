@@ -65,7 +65,6 @@ export function SettingsForm({ initial, isSuper }: { initial: PlatformSettings; 
           <Field id="n-before" label="Hours before the deadline">
             <Input id="n-before" type="number" min={1} max={12} value={s.notifications.deadlineReminderHoursBefore} onChange={(e) => setS({ ...s, notifications: { ...s.notifications, deadlineReminderHoursBefore: num(e.target.value) } })} />
           </Field>
-          <label className="flex items-center gap-2 text-sm"><Checkbox checked={s.notifications.resultEmailEnabled} onChange={(e) => setS({ ...s, notifications: { ...s.notifications, resultEmailEnabled: e.target.checked } })} /> Results email</label>
         </CardContent>
       </Card>
       <div className="flex justify-end">

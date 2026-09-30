@@ -3,7 +3,6 @@ import type { Types } from "mongoose";
 import { vi } from "vitest";
 import { createSession } from "@/lib/auth/session";
 import { computeEndDate, computeStartDate, getDayWindow } from "@/lib/competition/schedule";
-import type { EmailMessage } from "@/lib/notifications/email";
 import { hashPassword } from "@/lib/security/password";
 import { addDaysToLocalDate, localDateInZone } from "@/lib/time/zoned";
 import type { OptionId } from "@/lib/validation/quiz";
@@ -11,8 +10,6 @@ import { Competition, type ICompetition } from "@/models/Competition";
 import { Question } from "@/models/Question";
 import { User, type Role } from "@/models/User";
 import type { SessionKind } from "@/models/Session";
-
-export const sentEmails: EmailMessage[] = [];
 
 export const TZ = "Asia/Kolkata";
 export const PASSWORD = "Str0ng!Passw0rd";

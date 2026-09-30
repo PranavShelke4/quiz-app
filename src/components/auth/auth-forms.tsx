@@ -66,13 +66,7 @@ export function LoginForm({ admin = false }: { admin?: boolean }) {
       <Field id="password" label="Password" error={errors.password}>
         <Input {...fieldProps("password", errors)} type="password" autoComplete="current-password" required />
       </Field>
-      {!admin && (
-        <div className="flex justify-end text-sm">
-          <Link href="/forgot-password" className="text-primary hover:underline">
-            Forgot password?
-          </Link>
-        </div>
-      )}
+      {!admin && <p className="text-right text-sm text-muted-foreground">Forgot password? Ask an admin for a reset link.</p>}
       <Button type="submit" className="w-full" size="lg" loading={busy} loadingText="Signing in…">
         Sign in
       </Button>
@@ -145,42 +139,6 @@ export function SignupForm() {
       </div>
       <Button type="submit" className="w-full" size="lg" loading={busy} loadingText="Creating account…">
         Create account
-      </Button>
-    </form>
-  );
-}
-
-export function ForgotPasswordForm() {
-  const [sent, setSent] = useState(false);
-  const { busy, errors, formError, run } = useSubmit();
-
-  if (sent) {
-    return (
-      <Alert tone="success" title="Check your email">
-        If an account exists for that address, we&apos;ve sent a link to reset your password. It expires in 1 hour.
-      </Alert>
-    );
-  }
-
-  return (
-    <form
-      noValidate
-      className="space-y-4"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const fd = new FormData(e.currentTarget);
-        run(async () => {
-          await api("/api/auth/forgot-password", { body: { email: fd.get("email") } });
-          setSent(true);
-        });
-      }}
-    >
-      {formError && <Alert tone="danger">{formError}</Alert>}
-      <Field id="email" label="Email" error={errors.email}>
-        <Input {...fieldProps("email", errors)} type="email" autoComplete="email" required />
-      </Field>
-      <Button type="submit" className="w-full" size="lg" loading={busy} loadingText="Sending…">
-        Send reset link
       </Button>
     </form>
   );

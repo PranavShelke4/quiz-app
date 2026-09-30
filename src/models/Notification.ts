@@ -16,10 +16,9 @@ export interface INotification {
   title: string;
   body: string;
   link: string | null;
-  /** Idempotency key: the same reminder is never created (or emailed) twice. */
+  /** Idempotency key: the same reminder is never created twice. */
   dedupeKey: string;
   readAt: Date | null;
-  emailedAt: Date | null;
   createdAt: Date;
 }
 
@@ -32,7 +31,6 @@ const NotificationSchema = new Schema<INotification>(
     link: { type: String, default: null },
     dedupeKey: { type: String, required: true },
     readAt: { type: Date, default: null },
-    emailedAt: { type: Date, default: null },
   },
   { timestamps: { createdAt: true, updatedAt: false } },
 );

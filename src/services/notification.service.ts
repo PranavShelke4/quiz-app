@@ -1,26 +1,18 @@
 import type { Types } from "mongoose";
 import { connectDb } from "@/lib/db/mongoose";
 import { logger } from "@/lib/logger";
-import {
-  sendDailyReminder,
-  sendDeadlineReminder,
-  sendLeaderboardRevealEmail,
-} from "@/lib/notifications/email";
 import { now } from "@/lib/time/clock";
 import { zonedParts } from "@/lib/time/zoned";
 import type { ICompetition } from "@/models/Competition";
 import { CompetitionParticipant } from "@/models/CompetitionParticipant";
 import { DailyAnswer } from "@/models/DailyAnswer";
 import { Notification, type NotificationType } from "@/models/Notification";
-import { User } from "@/models/User";
 import { clockFor } from "@/services/competition.service";
-import { runWithConcurrency } from "@/services/participant.service";
 import { getSettings } from "@/services/settings.service";
 
 /**
- * Notification pipeline: an in-app Notification row is the idempotent record
- * (unique dedupeKey) and each channel (email today; push later) is delivered
- * only for rows that were newly inserted.
+ * Notification pipeline: in-app Notification rows, made idempotent by a unique
+ * dedupeKey so re-running a job never duplicates a reminder.
  */
 interface Draft {
   userId: Types.ObjectId;
@@ -46,16 +38,6 @@ async function insertNew(drafts: Draft[]): Promise<Draft[]> {
     const keys = new Set(inserted.map((d) => d.dedupeKey));
     return fresh.filter((d) => keys.has(d.dedupeKey));
   }
-}
-
-async function deliverEmails(drafts: Draft[], send: (to: string, name: string) => Promise<boolean>) {
-  const users = await User.find({ _id: { $in: drafts.map((d) => d.userId) }, isActive: true }).select("email name").lean();
-  const userMap = new Map(users.map((u) => [String(u._id), u]));
-  await runWithConcurrency(drafts, 5, async (d) => {
-    const u = userMap.get(String(d.userId));
-    if (!u) return;
-    if (await send(u.email, u.name)) await Notification.updateOne({ dedupeKey: d.dedupeKey }, { $set: { emailedAt: now() } });
-  });
 }
 
 async function unansweredParticipants(comp: ICompetition, dayNumber: number) {
@@ -88,7 +70,6 @@ export async function runReminders(comp: ICompetition, at: Date = now()) {
         dedupeKey: `DAILY_REMINDER:${cid}:${day}:${String(userId)}`,
       })),
     );
-    await deliverEmails(created, (to, name) => sendDailyReminder(to, name, comp.name, day));
     result.daily = created.length;
   }
 
@@ -106,7 +87,6 @@ export async function runReminders(comp: ICompetition, at: Date = now()) {
         dedupeKey: `DEADLINE_REMINDER:${cid}:${day}:${String(userId)}`,
       })),
     );
-    await deliverEmails(created, (to, name) => sendDeadlineReminder(to, name, hoursBefore));
     result.deadline = created.length;
   }
 
@@ -129,7 +109,6 @@ export async function runReminders(comp: ICompetition, at: Date = now()) {
 
 export async function notifyResultsRevealed(comp: ICompetition) {
   await connectDb();
-  const settings = await getSettings();
   const participants = await CompetitionParticipant.find({ competitionId: comp._id }).select("userId").lean();
   const created = await insertNew(
     participants.map((p) => ({
@@ -141,9 +120,6 @@ export async function notifyResultsRevealed(comp: ICompetition) {
       dedupeKey: `RESULTS_REVEALED:${String(comp._id)}:${String(p.userId)}`,
     })),
   );
-  if (settings.notifications.resultEmailEnabled) {
-    await deliverEmails(created, (to, name) => sendLeaderboardRevealEmail(to, name, comp.name));
-  }
   logger.info("notifications.results_revealed", { competitionId: String(comp._id), count: created.length });
   return created.length;
 }

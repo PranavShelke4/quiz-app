@@ -22,7 +22,6 @@ export interface ISettings {
     dailyReminderHour: number;
     deadlineReminderEnabled: boolean;
     deadlineReminderHoursBefore: number;
-    resultEmailEnabled: boolean;
   };
   platform: {
     maintenanceMode: boolean;
@@ -52,7 +51,6 @@ export const DEFAULT_SETTINGS: Omit<ISettings, "_id" | "updatedAt" | "createdAt"
     dailyReminderHour: 9,
     deadlineReminderEnabled: true,
     deadlineReminderHoursBefore: 2,
-    resultEmailEnabled: true,
   },
   platform: { maintenanceMode: false, registrationEnabled: true },
   globalSessionsInvalidatedAt: null,
@@ -80,7 +78,6 @@ const SettingsSchema = new Schema<ISettings>(
       dailyReminderHour: Number,
       deadlineReminderEnabled: Boolean,
       deadlineReminderHoursBefore: Number,
-      resultEmailEnabled: Boolean,
     },
     platform: { maintenanceMode: Boolean, registrationEnabled: Boolean },
     globalSessionsInvalidatedAt: { type: Date, default: null },

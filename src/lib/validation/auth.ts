@@ -50,7 +50,6 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required").max(PASSWORD_MAX_LENGTH),
 });
 
-export const forgotPasswordSchema = z.object({ email: emailSchema });
 
 export const tokenSchema = z.string().min(20).max(200).regex(/^[A-Za-z0-9_-]+$/);
 

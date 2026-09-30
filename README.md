@@ -57,7 +57,7 @@ src/
                            optimistic redirects, noindex. NOT the security boundary.
   app/
     (public)/              /, /rules, /privacy, /terms           (SEO metadata, OG/Twitter)
-    (auth)/                /login, /signup, /forgot-password, /reset-password, /verify-email
+    (auth)/                /login, /signup, /reset-password
     (user)/                /dashboard, /quiz, /leaderboard, /results, /results/[day], /profile
     admin/login            separate admin sign-in (ADMIN session)
     admin/(panel)/         dashboard, competitions, questions, users, answers, flags,
@@ -100,9 +100,9 @@ tests/unit | integration | e2e
 
 | Collection | Purpose | Indexes |
 | --- | --- | --- |
-| `users` | name, email, passwordHash (`select:false`), role, isActive, isEmailVerified, lastLoginAt, lockout counters, sessionsInvalidatedAt | `email` unique; createdAt; role; isActive+verified |
+| `users` | name, email, passwordHash (`select:false`), role, team, isActive, lastLoginAt, lockout counters, sessionsInvalidatedAt | `email` unique; createdAt; role; isActive; team |
 | `sessions` | tokenHash (SHA-256), userId, kind USER/ADMIN, expiresAt (sliding), absoluteExpiresAt, ip, UA | `tokenHash` unique; userId; TTL on expiresAt |
-| `authtokens` | VERIFY_EMAIL / RESET_PASSWORD, tokenHash, expiresAt, usedAt | tokenHash unique; TTL |
+| `authtokens` | RESET_PASSWORD, tokenHash, expiresAt, usedAt | tokenHash unique; TTL |
 | `competitions` | name, slug, description, startDate, endDate, durationDays, timezone, status, registration, scoring{points,negativeMarking,negativePoints}, tieBreakers, reveal mode/date/flags, rules, finalizedAt | `slug` unique; status+startDate; startDate+endDate |
 | `questions` | competitionId, dayNumber, questionText, options[4]{id A–D,text}, correctOptionId, explanation, category, difficulty, points, status, scheduledDate | **competitionId+dayNumber unique**; competitionId+scheduledDate; competitionId+status |
 | `dailyanswers` | competitionId, userId, dayNumber, questionId, selectedOptionId, isCorrect, score, status ANSWERED/MISSED, answeredAt, responseTimeMs, ip, UA, sessionId | **competitionId+userId+dayNumber unique**; competitionId+dayNumber+status; userId+competitionId; questionId; competitionId+ip+dayNumber |
@@ -110,7 +110,7 @@ tests/unit | integration | e2e
 | `auditlogs` | adminId, action, targetType/Id, metadata, ip, UA, createdAt — **append-only** (update/delete hooks throw; no API) | createdAt; adminId; action; target |
 | `answercorrections` | who/why/old/new/affected counts | competitionId+createdAt; questionId |
 | `suspicionflags` | MULTIPLE_ACCOUNTS / RAPID_SUBMISSIONS / SUSPICIOUS_ACTIVITY, status OPEN/DISMISSED/CONFIRMED | competitionId+userId+type+day unique |
-| `notifications` | in-app notification + email delivery record, idempotent dedupeKey | dedupeKey unique; userId+createdAt; TTL 120d |
+| `notifications` | in-app notification, idempotent dedupeKey | dedupeKey unique; userId+createdAt; TTL 120d |
 | `settings` | singleton: competition defaults, security, notifications, platform, globalSessionsInvalidatedAt | key unique |
 | `ratelimits` | fixed-window counters (multi-instance safe) | key+window unique; TTL |
 
@@ -157,7 +157,7 @@ tests/unit | integration | e2e
 | Passwords | Argon2id (m=19 MiB, t=2); policy ≥10 chars, upper+lower, digit, symbol; timing-equalised unknown-email logins |
 | Sessions | 256-bit random token in `HttpOnly; SameSite=Lax; Secure; __Host-` cookie (prod); only SHA-256 stored; sliding idle + absolute expiry; rotation every 24h with 60s grace; ADMIN sessions only via `/admin/login` (12h) |
 | Invalidation | logout, force-logout, disable, role change, password change/reset, SUPER_ADMIN global logout |
-| Brute force | per-IP login/signup/forgot limits; per-account lockout after N failures (settings) |
+| Brute force | per-IP login/signup limits; per-account lockout after N failures (settings) |
 | CSRF | SameSite cookies + Origin/Sec-Fetch-Site check in `proxy.ts` for all cookie-bearing mutations |
 | AuthZ | `apiRoute(access, {permission})` on every handler; RBAC USER / ADMIN / SUPER_ADMIN; `requireAdmin()` in every admin page; identity only from the session |
 | Input | Zod on every body/query (unknown keys stripped: `score`, `isCorrect`, `userId`, `role` are ignored); primitive-only values + `strictQuery` → no NoSQL operator injection; regex-escaped search; body size caps |
@@ -171,7 +171,7 @@ tests/unit | integration | e2e
 
 All responses: `{ "success": true, "data": … }` or `{ "success": false, "error": { "code", "message", "details?" } }`.
 
-User: `POST /api/auth/{signup,login,logout,forgot-password,reset-password,verify-email,resend-verification,change-password}` ·
+User: `POST /api/auth/{signup,login,logout,reset-password,change-password}` ·
 `GET /api/auth/session` · `GET /api/competitions/current[/status|/question]` · `POST /api/competitions/current/join` ·
 `GET /api/questions/:day` · `POST /api/quiz/submit` · `GET /api/quiz/progress` · `GET /api/leaderboard` ·
 `GET /api/results` · `GET|PATCH /api/profile` · `GET|POST /api/notifications`
@@ -194,12 +194,12 @@ heuristics. Triggers: GitHub Actions (`.github/workflows/cron.yml`, every 10 min
 any external scheduler via `curl -H "Authorization: Bearer $CRON_SECRET" https://host/api/cron/run`,
 or `pnpm cron:run` from a crontab.
 
-## Email / notifications
+## Notifications and password resets
 
-`src/lib/notifications/email.ts` exposes `sendVerificationEmail`, `sendPasswordResetEmail`,
-`sendDailyReminder`, `sendLeaderboardRevealEmail`, … over a pluggable transport (`console` for dev,
-`resend` via HTTP). Every notification is first stored in-app with a unique `dedupeKey`, so each
-reminder is created and emailed at most once; push can be added as another channel.
+The app sends no email. Signup needs no verification: new accounts can join and answer straight away.
+Reminders and results announcements are in-app notifications, each stored with a unique `dedupeKey`
+so it is created at most once. A user who forgets their password asks an admin, who clicks
+**Create reset link** on the user's admin page and shares the one-time link (valid 24 hours).
 
 ## Tests
 
@@ -208,7 +208,7 @@ reminder is created and emailed at most once; push can be added as another chann
   concurrent submission, lazy missed repair, all 8 API attacks, role escalation, admin/SUPER_ADMIN
   boundaries, CSRF/proxy, cron secret, append-only audit, auth flows (lockout, rate limit, reset
   revokes sessions, rotation), import all-or-nothing, corrections, manual reveal/hide, CSV export.
-- **E2E (Playwright)**: admin setup → CSV import → publish → signup → verify → answer → refresh →
+- **E2E (Playwright)**: admin setup → CSV import → publish → signup → answer → refresh →
   locked leaderboard → missed day (can't answer later) → end → leaderboard + results with answers;
   plus mobile no-horizontal-scroll and route guards.
 
@@ -217,8 +217,7 @@ reminder is created and emailed at most once; push can be added as another chann
 1. Atlas: create a cluster (replica set by default), a DB user, and allow Vercel egress in Network
    Access (`0.0.0.0/0` with a strong password, or Vercel's static IPs on Enterprise).
 2. Vercel: import the repo; set `MONGODB_URI`, `MONGODB_DB`, `AUTH_SECRET`, `NEXT_PUBLIC_APP_URL`,
-   `CRON_SECRET` (Vercel Cron sends it automatically), `EMAIL_PROVIDER=resend`, `EMAIL_FROM`,
-   `EMAIL_PROVIDER_API_KEY`, `ADMIN_SETUP_SECRET`. Leave `ENABLE_TEST_CLOCK` unset.
+   `CRON_SECRET` (Vercel Cron sends it automatically), `ADMIN_SETUP_SECRET`. Leave `ENABLE_TEST_CLOCK` unset.
 3. Deploy, then create the first super admin once:
    `curl -X POST https://host/api/admin/setup -H 'Content-Type: application/json' -d '{"setupSecret":"…","name":"…","email":"…","password":"…"}'`
    (disabled automatically once a super admin exists). Remove `ADMIN_SETUP_SECRET` afterwards.

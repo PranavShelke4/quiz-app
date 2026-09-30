@@ -12,7 +12,7 @@ import { Session } from "@/models/Session";
 import { SuspicionFlag } from "@/models/SuspicionFlag";
 import { User, type IUser, type Role } from "@/models/User";
 import { recordAudit } from "@/services/audit.service";
-import { sendAdminInitiatedReset } from "@/services/auth.service";
+import { createPasswordResetLink } from "@/services/auth.service";
 import { isLeaderboardRevealed } from "@/services/competition.service";
 
 type Actor = { userId: Types.ObjectId; role: Role; meta: Pick<RequestMeta, "ip" | "userAgent"> };
@@ -168,11 +168,12 @@ export async function forceLogout(id: string, actor: Actor) {
   await recordAudit({ adminId: actor.userId, action: "USER_FORCE_LOGOUT", targetType: "User", targetId: user._id, meta: actor.meta });
 }
 
-export async function adminSendPasswordReset(id: string, actor: Actor) {
+export async function adminCreateResetLink(id: string, actor: Actor): Promise<string> {
   await connectDb();
   const user = await loadTarget(id, actor);
-  await sendAdminInitiatedReset(user._id);
+  const resetUrl = await createPasswordResetLink(user._id);
   await recordAudit({ adminId: actor.userId, action: "USER_PASSWORD_RESET_SENT", targetType: "User", targetId: user._id, meta: actor.meta });
+  return resetUrl;
 }
 
 /** SUPER_ADMIN only (enforced by route permission `admins:manage`). */

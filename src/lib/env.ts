@@ -10,9 +10,6 @@ const schema = z.object({
   MONGODB_DB: z.string().min(1).default("quiz_app"),
   AUTH_SECRET: z.string().min(32, "AUTH_SECRET must be at least 32 characters"),
   NEXT_PUBLIC_APP_URL: z.url().default("http://localhost:3000"),
-  EMAIL_PROVIDER: z.enum(["console", "resend"]).default("console"),
-  EMAIL_FROM: z.string().default("Daily Quiz <no-reply@example.com>"),
-  EMAIL_PROVIDER_API_KEY: z.string().optional().default(""),
   CRON_SECRET: z.string().optional().default(""),
   ADMIN_SETUP_SECRET: z.string().optional().default(""),
   TRUST_PROXY: z

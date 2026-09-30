@@ -1,11 +1,12 @@
 "use client";
 
-import { KeyRound, LogOut, ShieldCheck, UserCheck, UserX } from "lucide-react";
+import { Copy, KeyRound, LogOut, ShieldCheck, UserCheck, UserX } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 import { useAction } from "@/components/admin/use-action";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/dialog";
-import { Field, Select, Textarea } from "@/components/ui/primitives";
+import { ConfirmDialog, Dialog } from "@/components/ui/dialog";
+import { Field, Input, Select, Textarea } from "@/components/ui/primitives";
 
 export function UserActions({
   id,
@@ -23,10 +24,11 @@ export function UserActions({
   isSelf: boolean;
 }) {
   const { fire, pending } = useAction();
+  const [resetUrl, setResetUrl] = useState<string | null>(null);
   const [dialog, setDialog] = useState<"disable" | "logout" | "role" | null>(null);
   const [reason, setReason] = useState("");
   const [newRole, setNewRole] = useState(role);
-  const post = (body: Record<string, unknown>, msg: string) => fire(String(body.action), `/api/admin/users/${id}`, { body }, msg);
+  const post = <T,>(body: Record<string, unknown>, msg?: string) => fire<T>(String(body.action), `/api/admin/users/${id}`, { body }, msg);
 
   return (
     <div className="flex flex-wrap gap-2">
@@ -43,8 +45,16 @@ export function UserActions({
       <Button variant="outline" size="sm" onClick={() => setDialog("logout")}>
         <LogOut /> Force logout
       </Button>
-      <Button variant="outline" size="sm" loading={pending === "reset-password"} onClick={() => post({ action: "reset-password" }, "Password reset email sent.")}>
-        <KeyRound /> Send password reset
+      <Button
+        variant="outline"
+        size="sm"
+        loading={pending === "reset-password"}
+        onClick={async () => {
+          const res = await post<{ resetUrl: string }>({ action: "reset-password" });
+          if (res) setResetUrl(res.resetUrl);
+        }}
+      >
+        <KeyRound /> Create reset link
       </Button>
       {canManageRoles && !isSelf && (
         <Button variant="outline" size="sm" onClick={() => setDialog("role")}>
@@ -52,6 +62,24 @@ export function UserActions({
         </Button>
       )}
 
+      <Dialog
+        open={resetUrl !== null}
+        onClose={() => setResetUrl(null)}
+        title="Password reset link"
+        description={`Send this link to ${name}. It works once and expires in 24 hours.`}
+        footer={
+          <Button
+            onClick={async () => {
+              await navigator.clipboard.writeText(resetUrl ?? "");
+              toast.success("Link copied.");
+            }}
+          >
+            <Copy /> Copy link
+          </Button>
+        }
+      >
+        <Input readOnly value={resetUrl ?? ""} aria-label="Reset link" onFocus={(e) => e.currentTarget.select()} />
+      </Dialog>
       <ConfirmDialog
         open={dialog === "disable"}
         onClose={() => setDialog(null)}
