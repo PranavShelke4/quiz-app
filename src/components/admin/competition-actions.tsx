@@ -55,11 +55,9 @@ export function CompetitionActions({
           <Archive /> Archive
         </Button>
       )}
-      {status === "DRAFT" && (
-        <Button size="sm" variant="danger" onClick={() => setConfirm("delete")}>
-          <Trash2 /> Delete
-        </Button>
-      )}
+      <Button size="sm" variant="danger" onClick={() => setConfirm("delete")}>
+        <Trash2 /> Delete
+      </Button>
 
       <ConfirmDialog
         open={confirm === "publish"}
@@ -103,7 +101,7 @@ export function CompetitionActions({
         open={confirm === "delete"}
         onClose={() => setConfirm(null)}
         title="Delete competition?"
-        description="This deletes the draft and all its questions. This action cannot be easily undone."
+        description="This permanently deletes the competition, along with all its questions, answers, and participant records. This action cannot be easily undone."
         confirmText={name}
         confirmLabel="Delete competition"
         loadingLabel="Deleting…"

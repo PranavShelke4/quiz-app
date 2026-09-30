@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AlertTriangle, CalendarRange, Download, FileQuestion, Plus, Trophy, Upload, Users } from "lucide-react";
 import Link from "next/link";
 import { ParticipationChart, PercentLineChart, RegistrationChart } from "@/components/admin/charts";
+import { CompetitionDeleteButton } from "@/components/admin/competition-delete-button";
 import { ButtonLink, DownloadButton } from "@/components/ui/button";
 import { Alert, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, EmptyState, PageHeader, StatCard } from "@/components/ui/primitives";
 import { requireAdmin } from "@/lib/auth/dal";
@@ -56,6 +57,7 @@ export default async function AdminDashboardPage() {
               {c.phase === "ACTIVE" && <Badge>Day {c.currentDay} / {c.durationDays}</Badge>}
               <ButtonLink href={`/admin/leaderboard?competitionId=${c.id}`} size="sm" variant="outline"><Trophy /> View Leaderboard</ButtonLink>
               <DownloadButton href={`/api/admin/leaderboard/export?competitionId=${c.id}`}><Download /> Export Results</DownloadButton>
+              <CompetitionDeleteButton id={c.id} name={c.name} variant="outline" size="sm" />
             </div>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">

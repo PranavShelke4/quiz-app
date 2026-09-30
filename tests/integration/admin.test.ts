@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { POST as competitionActions } from "@/app/api/admin/competitions/[id]/actions/route";
-import { PATCH as updateCompetitionRoute } from "@/app/api/admin/competitions/[id]/route";
+import { PATCH as updateCompetitionRoute, DELETE as deleteCompetitionRoute } from "@/app/api/admin/competitions/[id]/route";
 import { POST as createCompetitionRoute } from "@/app/api/admin/competitions/route";
 import { GET as exportAnswersRoute } from "@/app/api/admin/answers/export/route";
 import { POST as leaderboardAction } from "@/app/api/admin/leaderboard/route";
@@ -135,5 +135,33 @@ describe("Admin: competition + question workflow", () => {
     expect(res.text).toContain("User,Email,Competition,Day");
     expect(res.text).toContain("'=cmd");
     expect(res.text).toContain("Correct");
+  });
+
+  it("deletes a competition and cascades deletion of all questions, participants, answers, and corrections", async () => {
+    const cookie = await adminCookie();
+    const comp = await createRunningCompetition({ startOffsetDays: -1, durationDays: 2 });
+    const player = await createUser();
+    const pc = await sessionCookieFor(player._id);
+    setNow(dayMiddle(comp, 1));
+    await call(submitRoute, { cookie: pc, body: { optionId: correctFor(1) } });
+
+    expect(await Question.countDocuments({ competitionId: comp._id })).toBeGreaterThan(0);
+    expect(await CompetitionParticipant.countDocuments({ competitionId: comp._id })).toBeGreaterThan(0);
+    expect(await DailyAnswer.countDocuments({ competitionId: comp._id })).toBeGreaterThan(0);
+
+    const res = await call(deleteCompetitionRoute, {
+      cookie,
+      method: "DELETE",
+      params: { id: String(comp._id) },
+      body: { confirmName: comp.name },
+    });
+    expect(res.status).toBe(200);
+    expect(res.json.data).toEqual({ deleted: true });
+
+    expect(await Competition.findById(comp._id)).toBeNull();
+    expect(await Question.countDocuments({ competitionId: comp._id })).toBe(0);
+    expect(await CompetitionParticipant.countDocuments({ competitionId: comp._id })).toBe(0);
+    expect(await DailyAnswer.countDocuments({ competitionId: comp._id })).toBe(0);
+    expect(await AuditLog.exists({ action: "COMPETITION_DELETED", targetId: String(comp._id) })).toBeTruthy();
   });
 });

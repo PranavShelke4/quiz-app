@@ -23,7 +23,13 @@ export const PATCH = apiRoute<Params>("admin", { permission: "competitions:manag
 });
 
 export const DELETE = apiRoute<Params>("admin", { permission: "competitions:manage" }, async (ctx) => {
-  const { confirmName } = await ctx.body(z.object({ confirmName: z.string().max(200) }));
+  let confirmName: string | undefined;
+  try {
+    const body = await ctx.body(z.object({ confirmName: z.string().max(200).optional() }));
+    confirmName = body.confirmName;
+  } catch {
+    confirmName = undefined;
+  }
   await deleteCompetition(ctx.params.id, confirmName, actorOf(ctx));
   return { deleted: true };
 });

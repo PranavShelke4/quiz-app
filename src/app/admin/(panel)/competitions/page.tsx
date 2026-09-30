@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CalendarRange, Plus } from "lucide-react";
+import { CalendarRange, Pencil, Plus } from "lucide-react";
+import { CompetitionDeleteButton } from "@/components/admin/competition-delete-button";
 import { FilterBar, FilterSelect, sp } from "@/components/admin/filter-bar";
 import { ButtonLink } from "@/components/ui/button";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui/primitives";
@@ -45,6 +46,7 @@ export default async function CompetitionsPage({ searchParams }: PageProps<"/adm
                 <TH>Dates</TH>
                 <TH className="text-right">Questions</TH>
                 <TH className="text-right">Participants</TH>
+                <TH className="text-right">Actions</TH>
               </tr>
             </THead>
             <TBody>
@@ -66,6 +68,14 @@ export default async function CompetitionsPage({ searchParams }: PageProps<"/adm
                     {questions > publishedQuestions && <span className="block text-xs text-muted-foreground">{questions - publishedQuestions} draft</span>}
                   </TD>
                   <TD className="text-right tabular-nums">{participants}</TD>
+                  <TD className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <ButtonLink href={`/admin/competitions/${String(c._id)}`} variant="ghost" size="icon" aria-label={`View or edit ${c.name}`} title="View or edit">
+                        <Pencil className="size-4" />
+                      </ButtonLink>
+                      <CompetitionDeleteButton id={String(c._id)} name={c.name} variant="ghost" size="icon" className="text-danger hover:text-danger hover:bg-danger-soft" />
+                    </div>
+                  </TD>
                 </TR>
               ))}
             </TBody>

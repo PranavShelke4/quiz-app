@@ -7,10 +7,12 @@ import type { RequestMeta } from "@/lib/security/request-meta";
 import { now } from "@/lib/time/clock";
 import { localDateInZone, zonedTimeToUtc } from "@/lib/time/zoned";
 import type { CompetitionInput } from "@/lib/validation/quiz";
+import { AnswerCorrection } from "@/models/AnswerCorrection";
 import { Competition, type ICompetition } from "@/models/Competition";
 import { CompetitionParticipant } from "@/models/CompetitionParticipant";
 import { DailyAnswer } from "@/models/DailyAnswer";
 import { Question } from "@/models/Question";
+import { SuspicionFlag } from "@/models/SuspicionFlag";
 import { recordAudit } from "@/services/audit.service";
 
 export type CompetitionDoc = ICompetition;
@@ -402,19 +404,27 @@ export async function archiveCompetition(id: string, actor: Actor) {
   await recordAudit({ adminId: actor.userId, action: "COMPETITION_ARCHIVED", targetType: "Competition", targetId: comp._id, meta: actor.meta });
 }
 
-/** Deletes a draft competition and its questions. Anything with participant data is never deleted. */
-export async function deleteCompetition(id: string, confirmName: string, actor: Actor) {
+/** Deletes a competition and all associated questions, participants, answers, corrections, and suspicion flags. */
+export async function deleteCompetition(id: string, confirmName: string | undefined, actor: Actor) {
   await connectDb();
   const comp = await getCompetitionById(id);
-  if (comp.status !== "DRAFT") throw new AppError("COMPETITION_LOCKED", "Only draft competitions can be deleted. Archive completed ones instead.");
-  if (confirmName.trim() !== comp.name) throw new AppError("VALIDATION_ERROR", "The confirmation name doesn't match.");
-  if (await DailyAnswer.exists({ competitionId: comp._id })) {
-    throw new AppError("COMPETITION_LOCKED", "This competition has answer records and can't be deleted.");
+  if (confirmName && confirmName.trim() !== comp.name) {
+    throw new AppError("VALIDATION_ERROR", "The confirmation name doesn't match.");
   }
+  await DailyAnswer.deleteMany({ competitionId: comp._id });
+  await AnswerCorrection.deleteMany({ competitionId: comp._id });
+  await SuspicionFlag.deleteMany({ competitionId: comp._id });
   await Question.deleteMany({ competitionId: comp._id });
   await CompetitionParticipant.deleteMany({ competitionId: comp._id });
   await Competition.deleteOne({ _id: comp._id });
-  await recordAudit({ adminId: actor.userId, action: "COMPETITION_DELETED", targetType: "Competition", targetId: comp._id, metadata: { name: comp.name }, meta: actor.meta });
+  await recordAudit({
+    adminId: actor.userId,
+    action: "COMPETITION_DELETED",
+    targetType: "Competition",
+    targetId: comp._id,
+    metadata: { name: comp.name, status: comp.status },
+    meta: actor.meta,
+  });
 }
 
 export function toAdminCompetition(comp: ICompetition, at: Date = now()) {
