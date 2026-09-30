@@ -189,8 +189,9 @@ Error codes: see `src/lib/errors.ts` (e.g. `ANSWER_ALREADY_SUBMITTED`, `QUESTION
 
 `runScheduledJobs()` (idempotent; run every 5–15 min): status transitions → missed-day rollover →
 finalize + automatic reveal (+ notifications) → daily/deadline/ending reminders → anti-cheat
-heuristics. Triggers: Vercel Cron (`vercel.json`, every 10 min — Hobby plans only allow daily, which
-still works thanks to lazy repair), any external scheduler via `curl -H "Authorization: Bearer $CRON_SECRET" https://host/api/cron/run`,
+heuristics. Triggers: GitHub Actions (`.github/workflows/cron.yml`, every 10 min — set repo secrets
+`APP_URL` and `CRON_SECRET`), Vercel Cron (`vercel.json`, daily as a backstop — the Hobby plan limit),
+any external scheduler via `curl -H "Authorization: Bearer $CRON_SECRET" https://host/api/cron/run`,
 or `pnpm cron:run` from a crontab.
 
 ## Email / notifications

@@ -1,0 +1,22 @@
+# Vercel Hobby only allows daily crons, so the frequent trigger lives here.
+# Requires repo secrets: APP_URL (e.g. https://your-app.vercel.app) and CRON_SECRET.
+name: Scheduled jobs
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Trigger /api/cron/run
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl --fail-with-body -sS -m 300 -X POST \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "${APP_URL%/}/api/cron/run"
