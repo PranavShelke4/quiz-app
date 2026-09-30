@@ -28,7 +28,7 @@ async function main() {
   const user = await User.findOneAndUpdate(
     { email },
     {
-      $set: { role, isActive: true, isEmailVerified: true, emailVerifiedAt: new Date(), passwordHash: await hashPassword(password), sessionsInvalidatedAt: new Date() },
+      $set: { role, isActive: true, passwordHash: await hashPassword(password), sessionsInvalidatedAt: new Date() },
       $setOnInsert: { email, name },
     },
     { upsert: true, returnDocument: "after" },

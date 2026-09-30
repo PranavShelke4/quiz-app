@@ -40,7 +40,6 @@ export default async function AdminUserDetailPage({ params }: PageProps<"/admin/
               <p className="text-sm text-muted-foreground">{u.email}</p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <Badge tone={u.isActive ? "success" : "danger"}>{u.isActive ? "Active" : "Disabled"}</Badge>
-                <Badge tone={u.isEmailVerified ? "success" : "warning"}>{u.isEmailVerified ? "Email verified" : "Email unverified"}</Badge>
                 <Badge>{u.role}</Badge>
                 {u.lockedUntil && <Badge tone="warning">Locked until {formatDateTime(u.lockedUntil)}</Badge>}
               </div>
@@ -50,7 +49,6 @@ export default async function AdminUserDetailPage({ params }: PageProps<"/admin/
             id={u.id}
             name={u.name}
             isActive={u.isActive}
-            isEmailVerified={u.isEmailVerified}
             role={u.role}
             canManageRoles={hasPermission(auth.user.role, "admins:manage")}
             isSelf={auth.user.id === u.id}

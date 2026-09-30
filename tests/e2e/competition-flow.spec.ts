@@ -3,7 +3,7 @@ import { E2E_SECRETS } from "../../playwright.config";
 
 /**
  * The Definition-of-Done scenario, end to end:
- * admin sets up a 3-day competition → user signs up, is verified, answers,
+ * admin sets up a 3-day competition → user signs up, answers,
  * refreshes (answer persists), misses a day (MISSED, can't answer later),
  * competition ends → leaderboard + results revealed with correct answers.
  */
@@ -88,7 +88,7 @@ test("full 3-day competition journey", async ({ page, request }, testInfo) => {
   await page.getByRole("dialog").getByRole("button", { name: "Publish" }).click();
   await expect(page.getByText("SCHEDULED").first()).toBeVisible();
 
-  // ---- User: sign up; admin verifies the email ------------------------------
+  // ---- User: sign up -------------------------------------------------------
   await page.getByRole("button", { name: "Sign out" }).click();
   await page.goto("/signup");
   await fill(page, "Name", USER.name);
@@ -97,14 +97,6 @@ test("full 3-day competition journey", async ({ page, request }, testInfo) => {
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page).toHaveURL(/\/dashboard/);
-  await expect(page.getByText("Verify your email to compete")).toBeVisible();
-
-  // Verification link goes to the console email provider; verify via the admin API instead.
-  const adminCtx = await (await import("@playwright/test")).request.newContext({ baseURL: testInfo.project.use.baseURL });
-  await adminCtx.post("/api/admin/auth/login", { data: { email: ADMIN.email, password: ADMIN.password }, headers: { origin: testInfo.project.use.baseURL! } });
-  const users = await (await adminCtx.get(`/api/admin/users?search=${encodeURIComponent(USER.email)}`)).json();
-  const userId = users.data.items[0].id as string;
-  await adminCtx.post(`/api/admin/users/${userId}`, { data: { action: "verify-email" }, headers: { origin: testInfo.project.use.baseURL! } });
 
   // ---- Day 1: answer, refresh, still submitted -----------------------------
   await setClock(request, new Date(start.getTime() + 10 * 3_600_000).toISOString());
@@ -156,7 +148,6 @@ test("full 3-day competition journey", async ({ page, request }, testInfo) => {
   await page.goto("/results/2");
   await expect(page.getByText("Missed · 0")).toBeVisible();
 
-  await adminCtx.dispose();
   await setClock(request, new Date().toISOString());
 });
 

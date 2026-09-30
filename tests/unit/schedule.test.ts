@@ -37,21 +37,22 @@ describe("time zone helpers", () => {
 describe("competition day calculation", () => {
   const input = { startDate: computeStartDate("2026-10-01", "Asia/Kolkata"), durationDays: 30, timezone: "Asia/Kolkata" };
 
-  it("derives the exclusive end date", () => {
+  it("derives the exclusive end date at local midnight after final day", () => {
     expect(computeEndDate("2026-10-01", 30, "Asia/Kolkata").toISOString()).toBe(kolkata("2026-10-31").toISOString());
   });
 
-  it("is NOT_STARTED before Day 1 opens", () => {
-    const c = getCompetitionClock(input, kolkata("2026-09-30", "23:59:59"));
+  it("is NOT_STARTED before Day 1 opens at 9:00 AM", () => {
+    const c = getCompetitionClock(input, kolkata("2026-10-01", "08:59:59"));
     expect(c.phase).toBe("NOT_STARTED");
     expect(c.currentDay).toBeNull();
     expect(c.lastClosedDay).toBe(0);
   });
 
   it("maps Oct 1 → Day 1, Oct 2 → Day 2, Oct 30 → Day 30", () => {
-    expect(getCompetitionClock(input, kolkata("2026-10-01")).currentDay).toBe(1);
-    expect(getCompetitionClock(input, kolkata("2026-10-01", "23:59:59")).currentDay).toBe(1);
-    expect(getCompetitionClock(input, kolkata("2026-10-02")).currentDay).toBe(2);
+    expect(getCompetitionClock(input, kolkata("2026-10-01", "09:00:00")).currentDay).toBe(1);
+    expect(getCompetitionClock(input, kolkata("2026-10-01", "12:00:00")).currentDay).toBe(1);
+    expect(getCompetitionClock(input, kolkata("2026-10-01", "20:00:00")).currentDay).toBe(1);
+    expect(getCompetitionClock(input, kolkata("2026-10-02", "11:00:00")).currentDay).toBe(2);
     expect(getCompetitionClock(input, kolkata("2026-10-30", "12:00:00")).currentDay).toBe(30);
   });
 
@@ -60,8 +61,8 @@ describe("competition day calculation", () => {
     expect(getCompetitionClock(input, new Date("2026-10-01T19:00:00Z")).currentDay).toBe(2);
   });
 
-  it("is ENDED from local midnight after Day 30", () => {
-    const c = getCompetitionClock(input, kolkata("2026-10-31"));
+  it("is ENDED after final day closes at 6:00 PM", () => {
+    const c = getCompetitionClock(input, kolkata("2026-10-30", "18:00:01"));
     expect(c.phase).toBe("ENDED");
     expect(c.lastClosedDay).toBe(30);
     expect(c.daysRemaining).toBe(0);
@@ -71,24 +72,39 @@ describe("competition day calculation", () => {
     expect(getCompetitionClock(input, kolkata("2026-10-12", "10:00:00")).daysRemaining).toBe(18);
   });
 
-  it("computes the daily deadline", () => {
+  it("computes the daily deadline from 9:00 AM to 6:00 PM", () => {
     const w = getDayWindow(input, 12);
-    expect(w.opensAt.toISOString()).toBe(kolkata("2026-10-12").toISOString());
-    expect(w.closesAt.toISOString()).toBe(kolkata("2026-10-13").toISOString());
+    expect(w.opensAt.toISOString()).toBe(kolkata("2026-10-12", "09:00:00").toISOString());
+    expect(w.closesAt.toISOString()).toBe(kolkata("2026-10-12", "18:00:00").toISOString());
   });
 
-  it("classifies day access as past/open/future", () => {
-    const at = kolkata("2026-10-05", "08:00:00");
-    expect(getDayAccess(input, 4, at)).toBe("CLOSED");
-    expect(getDayAccess(input, 5, at)).toBe("OPEN");
-    expect(getDayAccess(input, 6, at)).toBe("UPCOMING");
+  it("classifies day access as past/open/future with 9am - 6pm window", () => {
+    const morning = kolkata("2026-10-05", "08:00:00");
+    expect(getDayAccess(input, 4, morning)).toBe("CLOSED");
+    expect(getDayAccess(input, 5, morning)).toBe("UPCOMING"); // Not open before 9am
+    expect(getDayAccess(input, 6, morning)).toBe("UPCOMING");
+
+    const midday = kolkata("2026-10-05", "11:00:00");
+    expect(getDayAccess(input, 4, midday)).toBe("CLOSED");
+    expect(getDayAccess(input, 5, midday)).toBe("OPEN"); // Open between 9am and 6pm
+    expect(getDayAccess(input, 6, midday)).toBe("UPCOMING");
+
+    const evening = kolkata("2026-10-05", "19:00:00");
+    expect(getDayAccess(input, 5, evening)).toBe("CLOSED"); // Closed after 6pm
   });
 
-  it("keeps 24h-local days across DST (America/New_York)", () => {
-    const ny = { startDate: computeStartDate("2026-03-07", "America/New_York"), durationDays: 3, timezone: "America/New_York" };
-    const day2 = getDayWindow(ny, 2); // 2026-03-08 is only 23h long
-    expect(day2.closesAt.getTime() - day2.opensAt.getTime()).toBe(23 * 3_600_000);
-    expect(getCompetitionClock(ny, new Date("2026-03-09T04:30:00Z")).currentDay).toBe(3);
+  it("supports custom daily start and end times", () => {
+    const custom = {
+      startDate: computeStartDate("2026-10-01", "Asia/Kolkata"),
+      durationDays: 5,
+      timezone: "Asia/Kolkata",
+      dailyStartTime: "10:00",
+      dailyEndTime: "16:00",
+    };
+    const day1 = getDayWindow(custom, 1);
+    expect(day1.opensAt.toISOString()).toBe(kolkata("2026-10-01", "10:00:00").toISOString());
+    expect(day1.closesAt.toISOString()).toBe(kolkata("2026-10-01", "16:00:00").toISOString());
+    expect(day1.closesAt.getTime() - day1.opensAt.getTime()).toBe(6 * 3_600_000);
   });
 
   it("rejects out-of-range days", () => {

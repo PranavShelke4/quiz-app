@@ -7,12 +7,16 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Alert, Card, CardContent, CardHeader, CardTitle, Checkbox, Field, Input, Select, Textarea } from "@/components/ui/primitives";
 import { ApiClientError, api } from "@/lib/api/client";
+
 import { TIE_BREAKERS, TIE_BREAKER_LABELS, type TieBreaker } from "@/lib/leaderboard/ranking";
 import { COMMON_TIME_ZONES, addDaysToLocalDate, isValidLocalDate } from "@/lib/time/zoned";
 
 export interface CompetitionFormValues {
   name: string;
   description: string;
+  category: string;
+  dailyStartTime: string;
+  dailyEndTime: string;
   startLocalDate: string;
   timezone: string;
   durationDays: number;
@@ -104,6 +108,9 @@ export function CompetitionForm({
           <Field id="name" label="Name" error={errors.name} className="md:col-span-2">
             <Input id="name" value={v.name} onChange={(e) => set("name", e.target.value)} required maxLength={100} placeholder="October Daily Challenge" />
           </Field>
+          <Field id="category" label="Target Team / Category" error={errors.category} hint="Enter a team name or category, or leave as 'All' for company-wide participation.">
+            <Input id="category" value={v.category} onChange={(e) => set("category", e.target.value)} disabled={started} maxLength={60} placeholder="e.g. Engineering, Marketing, All" />
+          </Field>
           <Field id="description" label="Description" error={errors.description} className="md:col-span-2">
             <Textarea id="description" value={v.description} onChange={(e) => set("description", e.target.value)} maxLength={2000} />
           </Field>
@@ -126,9 +133,15 @@ export function CompetitionForm({
               ))}
             </Select>
           </Field>
+          <Field id="dailyStartTime" label="Daily Quiz Start Time" error={errors.dailyStartTime} hint="Quiz opens each day (HH:MM)">
+            <Input id="dailyStartTime" type="time" value={v.dailyStartTime} onChange={(e) => set("dailyStartTime", e.target.value)} disabled={started} />
+          </Field>
+          <Field id="dailyEndTime" label="Daily Quiz End Time" error={errors.dailyEndTime} hint="Quiz closes each day (HH:MM)">
+            <Input id="dailyEndTime" type="time" value={v.dailyEndTime} onChange={(e) => set("dailyEndTime", e.target.value)} disabled={started} />
+          </Field>
           <p className="text-sm text-muted-foreground md:col-span-3">
             Runs from <strong className="text-foreground">{v.startLocalDate || "—"}</strong> to <strong className="text-foreground">{lastDay}</strong> (end date,
-            inclusive). Each day opens at 00:00 and closes at 23:59:59 {v.timezone}.
+            inclusive). Each day opens at {v.dailyStartTime || "09:00"} and closes at {v.dailyEndTime || "18:00"} {v.timezone}.
           </p>
         </CardContent>
       </Card>

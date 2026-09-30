@@ -21,7 +21,7 @@ export type CompetitionDoc = ICompetition;
 const PUBLISHED_STATUSES = ["SCHEDULED", "ACTIVE", "COMPLETED"] as const;
 
 export const DEFAULT_RULES = [
-  "One question is released every day at 12:00 AM (competition time zone) and closes at 11:59:59 PM the same day.",
+  "One question is released every day at 9:00 AM (competition time zone) and closes at 6:00 PM the same day.",
   "Every question has exactly four options. Choose one and submit.",
   "You get one submission per day. Answers can't be changed once submitted.",
   "A day you don't answer is recorded as missed and scores 0 points.",
@@ -30,8 +30,20 @@ export const DEFAULT_RULES = [
   "If a question is found to be wrong, admins may issue a documented correction; affected scores are recalculated for everyone.",
 ];
 
-export function clockFor(comp: Pick<ICompetition, "startDate" | "durationDays" | "timezone">, at: Date = now()): CompetitionClock {
-  return getCompetitionClock({ startDate: comp.startDate, durationDays: comp.durationDays, timezone: comp.timezone }, at);
+export function clockFor(
+  comp: Pick<ICompetition, "startDate" | "durationDays" | "timezone"> & Partial<Pick<ICompetition, "dailyStartTime" | "dailyEndTime">>,
+  at: Date = now(),
+): CompetitionClock {
+  return getCompetitionClock(
+    {
+      startDate: comp.startDate,
+      durationDays: comp.durationDays,
+      timezone: comp.timezone,
+      dailyStartTime: comp.dailyStartTime ?? "09:00",
+      dailyEndTime: comp.dailyEndTime ?? "18:00",
+    },
+    at,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -40,10 +52,13 @@ export function clockFor(comp: Pick<ICompetition, "startDate" | "durationDays" |
 export interface PublicCompetitionDTO {
   id: string;
   name: string;
+  category: string;
   slug: string;
   description: string;
   timezone: string;
   durationDays: number;
+  dailyStartTime: string;
+  dailyEndTime: string;
   startsAt: string;
   endsAt: string;
   phase: CompetitionClock["phase"];
@@ -64,10 +79,13 @@ export function toPublicCompetition(comp: ICompetition, at: Date = now()): Publi
   return {
     id: String(comp._id),
     name: comp.name,
+    category: comp.category ?? "All",
     slug: comp.slug,
     description: comp.description,
     timezone: comp.timezone,
     durationDays: comp.durationDays,
+    dailyStartTime: comp.dailyStartTime ?? "09:00",
+    dailyEndTime: comp.dailyEndTime ?? "18:00",
     startsAt: clock.startsAt.toISOString(),
     endsAt: clock.endsAt.toISOString(),
     phase: clock.phase,
@@ -151,9 +169,11 @@ export async function syncCompetitionStatus(comp: ICompetition, at: Date = now()
   return { ...comp, ...$set };
 }
 
-export async function listCompetitions(params: { status?: ICompetition["status"]; page: number; pageSize: number }) {
+export async function listCompetitions(params: { status?: ICompetition["status"]; category?: string; page: number; pageSize: number }) {
   await connectDb();
-  const filter = params.status ? { status: params.status } : {};
+  const filter: Record<string, unknown> = {};
+  if (params.status) filter.status = params.status;
+  if (params.category && params.category !== "All") filter.category = params.category;
   const [items, total] = await Promise.all([
     Competition.find(filter).sort({ startDate: -1 }).skip((params.page - 1) * params.pageSize).limit(params.pageSize).lean(),
     Competition.countDocuments(filter),
@@ -243,6 +263,9 @@ function buildDoc(input: CompetitionInput) {
     : null;
   return {
     name: input.name,
+    category: input.category || "All",
+    dailyStartTime: input.dailyStartTime || "09:00",
+    dailyEndTime: input.dailyEndTime || "18:00",
     description: input.description,
     startDate,
     endDate,
@@ -264,7 +287,7 @@ export async function createCompetition(input: CompetitionInput, actor: Actor): 
   const slug = input.slug ? input.slug : await uniqueSlug(input.name);
   try {
     const [created] = await Competition.create([{ ...doc, slug, status: "DRAFT", createdBy: actor.userId }]);
-    await recordAudit({ adminId: actor.userId, action: "COMPETITION_CREATED", targetType: "Competition", targetId: created._id, metadata: { name: created.name }, meta: actor.meta });
+    await recordAudit({ adminId: actor.userId, action: "COMPETITION_CREATED", targetType: "Competition", targetId: created._id, metadata: { name: created.name, category: created.category }, meta: actor.meta });
     return created.toObject();
   } catch (e) {
     if (isDuplicateKeyError(e)) throw new AppError("CONFLICT", "That slug is already in use.");
@@ -273,7 +296,7 @@ export async function createCompetition(input: CompetitionInput, actor: Actor): 
 }
 
 /** Fields that may change after the competition has started. */
-const SAFE_AFTER_START = new Set(["name", "description", "rules", "leaderboardRevealMode", "leaderboardRevealLocalDateTime", "registrationOpen", "registrationCloseLocalDate"]);
+const SAFE_AFTER_START = new Set(["name", "category", "description", "rules", "leaderboardRevealMode", "leaderboardRevealLocalDateTime", "registrationOpen", "registrationCloseLocalDate"]);
 
 export async function updateCompetition(id: string, input: Partial<CompetitionInput>, actor: Actor): Promise<ICompetition> {
   await connectDb();
@@ -290,6 +313,9 @@ export async function updateCompetition(id: string, input: Partial<CompetitionIn
 
   const merged: CompetitionInput = {
     name: input.name ?? comp.name,
+    category: input.category ?? comp.category ?? "All",
+    dailyStartTime: input.dailyStartTime ?? comp.dailyStartTime ?? "09:00",
+    dailyEndTime: input.dailyEndTime ?? comp.dailyEndTime ?? "18:00",
     description: input.description ?? comp.description,
     startLocalDate: input.startLocalDate ?? localDateInZone(comp.startDate, comp.timezone),
     timezone: input.timezone ?? comp.timezone,
@@ -432,6 +458,7 @@ export function toAdminCompetition(comp: ICompetition, at: Date = now()) {
   return {
     id: String(comp._id),
     name: comp.name,
+    category: comp.category ?? "All",
     slug: comp.slug,
     description: comp.description,
     status: comp.status,
@@ -441,6 +468,8 @@ export function toAdminCompetition(comp: ICompetition, at: Date = now()) {
     endsAt: comp.endDate.toISOString(),
     startLocalDate: localDateInZone(comp.startDate, comp.timezone),
     timezone: comp.timezone,
+    dailyStartTime: comp.dailyStartTime ?? "09:00",
+    dailyEndTime: comp.dailyEndTime ?? "18:00",
     durationDays: comp.durationDays,
     scoring: comp.scoring,
     tieBreakers: comp.tieBreakers,

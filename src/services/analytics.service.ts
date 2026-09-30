@@ -149,9 +149,8 @@ export async function getAdminDashboard(at: Date = now()) {
   const todayStartUtc = startOfLocalDay(localDateInZone(at, comp?.timezone ?? "UTC"), comp?.timezone ?? "UTC");
   const weekAgo = new Date(at.getTime() - 7 * DAY_MS);
 
-  const [totalUsers, verifiedUsers, activeUsers, inactiveUsers, newToday, newWeek, openFlags] = await Promise.all([
+  const [totalUsers, activeUsers, inactiveUsers, newToday, newWeek, openFlags] = await Promise.all([
     User.countDocuments({}),
-    User.countDocuments({ isEmailVerified: true }),
     User.countDocuments({ isActive: true, lastLoginAt: { $gte: new Date(at.getTime() - 30 * DAY_MS) } }),
     User.countDocuments({ isActive: false }),
     User.countDocuments({ createdAt: { $gte: todayStartUtc } }),
@@ -207,7 +206,7 @@ export async function getAdminDashboard(at: Date = now()) {
 
   return {
     competition,
-    users: { totalUsers, verifiedUsers, activeUsers, inactiveUsers, newToday, newWeek },
+    users: { totalUsers, activeUsers, inactiveUsers, newToday, newWeek },
     quiz,
     charts,
     openFlags,

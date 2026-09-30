@@ -37,6 +37,7 @@ export const signupSchema = z
     name: nameSchema,
     email: emailSchema,
     password: passwordSchema,
+    team: z.string().trim().max(60).optional(),
     acceptTerms: z.literal(true, { error: "You must accept the terms to continue" }),
   })
   .refine((d) => !d.password.toLowerCase().includes(d.email.split("@")[0] ?? "\u0000"), {
@@ -58,7 +59,6 @@ export const resetPasswordSchema = z.object({
   password: passwordSchema,
 });
 
-export const verifyEmailSchema = z.object({ token: tokenSchema });
 
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1).max(PASSWORD_MAX_LENGTH),
@@ -67,6 +67,7 @@ export const changePasswordSchema = z.object({
 
 export const updateProfileSchema = z.object({
   name: nameSchema.optional(),
+  team: z.string().trim().max(60).optional(),
   avatar: z
     .union([z.literal(""), z.url({ protocol: /^https$/, error: "Avatar must be an https URL" }).max(500)])
     .optional(),

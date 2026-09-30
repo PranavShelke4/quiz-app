@@ -27,6 +27,9 @@ export default async function NewCompetitionPage() {
         initial={{
           name: `${monthName} Daily Challenge`,
           description: "",
+          category: "All",
+          dailyStartTime: "09:00",
+          dailyEndTime: "18:00",
           startLocalDate: start,
           timezone: d.timezone,
           durationDays: d.durationDays,

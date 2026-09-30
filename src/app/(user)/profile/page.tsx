@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { ProfileForms } from "@/components/auth/profile-forms";
-import { Badge, Card, CardContent, CardHeader, CardTitle, PageHeader } from "@/components/ui/primitives";
+import { Card, CardContent, CardHeader, CardTitle, PageHeader } from "@/components/ui/primitives";
 import { requireUser } from "@/lib/auth/dal";
 import { formatDate } from "@/lib/utils";
 import { getOwnProfile } from "@/services/user.service";
@@ -20,11 +20,11 @@ export default async function ProfilePage() {
         <CardContent className="space-y-2 text-sm">
           <p>
             <span className="text-muted-foreground">Email: </span>
-            {profile.email} {profile.isEmailVerified ? <Badge tone="success">Verified</Badge> : <Badge tone="warning">Not verified</Badge>}
+            {profile.email}
           </p>
         </CardContent>
       </Card>
-      <ProfileForms name={profile.name} avatar={profile.avatar ?? ""} />
+      <ProfileForms name={profile.name} avatar={profile.avatar ?? ""} team={profile.team} />
     </div>
   );
 }

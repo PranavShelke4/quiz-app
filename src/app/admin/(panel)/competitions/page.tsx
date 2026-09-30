@@ -53,8 +53,15 @@ export default async function CompetitionsPage({ searchParams }: PageProps<"/adm
               {items.map(({ competition: c, clock, publishedQuestions, questions, participants }) => (
                 <TR key={String(c._id)}>
                   <TD>
-                    <Link href={`/admin/competitions/${String(c._id)}`} className="font-medium hover:underline">{c.name}</Link>
-                    <p className="text-xs text-muted-foreground">{c.timezone}</p>
+                    <div className="flex items-center gap-2">
+                      <Link href={`/admin/competitions/${String(c._id)}`} className="font-medium hover:underline">{c.name}</Link>
+                      <Badge tone={c.category === "All" ? "neutral" : "primary"}>
+                        {c.category ?? "All"}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {c.timezone} · Daily {c.dailyStartTime ?? "09:00"}–{c.dailyEndTime ?? "18:00"}
+                    </p>
                   </TD>
                   <TD>
                     <Badge tone={STATUS_TONE[c.status]}>{c.status}</Badge>

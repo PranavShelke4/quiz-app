@@ -10,9 +10,8 @@ export interface IUser {
   passwordHash: string;
   avatar: string | null;
   role: Role;
+  team: string;
   isActive: boolean;
-  isEmailVerified: boolean;
-  emailVerifiedAt: Date | null;
   lastLoginAt: Date | null;
   lastLoginIp: string | null;
   failedLoginAttempts: number;
@@ -33,9 +32,8 @@ const UserSchema = new Schema<IUser>(
     passwordHash: { type: String, required: true, select: false },
     avatar: { type: String, default: null, maxlength: 500 },
     role: { type: String, enum: ROLES, default: "USER", required: true },
+    team: { type: String, default: "General", trim: true, maxlength: 60 },
     isActive: { type: Boolean, default: true },
-    isEmailVerified: { type: Boolean, default: false },
-    emailVerifiedAt: { type: Date, default: null },
     lastLoginAt: { type: Date, default: null },
     lastLoginIp: { type: String, default: null, select: false },
     failedLoginAttempts: { type: Number, default: 0, select: false },
@@ -50,6 +48,7 @@ const UserSchema = new Schema<IUser>(
 UserSchema.index({ email: 1 }, { unique: true });
 UserSchema.index({ createdAt: -1 });
 UserSchema.index({ role: 1, createdAt: -1 });
-UserSchema.index({ isActive: 1, isEmailVerified: 1 });
+UserSchema.index({ isActive: 1 });
+UserSchema.index({ team: 1 });
 
 export const User: Model<IUser> = (models.User as Model<IUser>) ?? model<IUser>("User", UserSchema);

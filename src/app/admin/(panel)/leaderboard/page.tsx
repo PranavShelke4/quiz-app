@@ -10,6 +10,7 @@ import { Alert, Badge, Card, EmptyState, PageHeader } from "@/components/ui/prim
 import { Pagination, TBody, TD, TH, THead, TR, Table } from "@/components/ui/table";
 import { resolveCompetitionContext } from "@/lib/admin/competition-context";
 import { requireAdmin } from "@/lib/auth/dal";
+import { COMPANY_TEAMS } from "@/lib/teams";
 import { adminLeaderboardQuery } from "@/lib/validation/admin";
 import { clockFor, isLeaderboardRevealed } from "@/services/competition.service";
 import { getAdminLeaderboard } from "@/services/leaderboard.service";
@@ -55,6 +56,12 @@ export default async function AdminLeaderboardPage({ searchParams }: PageProps<"
       <FilterBar action="/admin/leaderboard" resetHref={`/admin/leaderboard?competitionId=${ctx.selectedId}`}>
         <input type="hidden" name="competitionId" value={ctx.selectedId} />
         <SearchInput defaultValue={q.search} placeholder="Search participant" />
+        <FilterSelect
+          name="team"
+          label="Team / Category"
+          value={q.team}
+          options={[{ value: "", label: "All teams" }, ...COMPANY_TEAMS.filter((t) => t !== "All").map((t) => ({ value: t, label: t }))]}
+        />
         <FilterSelect name="sort" label="Sort by" value={q.sort} options={["rank", "score", "correct", "wrong", "missed", "accuracy", "streak"].map((s) => ({ value: s, label: s[0]!.toUpperCase() + s.slice(1) }))} />
         <FilterSelect name="dir" label="Order" value={q.dir} options={[{ value: "", label: "Default" }, { value: "asc", label: "Ascending" }, { value: "desc", label: "Descending" }]} />
       </FilterBar>
@@ -66,7 +73,7 @@ export default async function AdminLeaderboardPage({ searchParams }: PageProps<"
           <Table>
             <THead>
               <tr>
-                <TH>Rank</TH><TH>Participant</TH><TH className="text-right">Score</TH><TH className="text-right">Correct</TH><TH className="text-right">Wrong</TH>
+                <TH>Rank</TH><TH>Participant</TH><TH>Team</TH><TH className="text-right">Score</TH><TH className="text-right">Correct</TH><TH className="text-right">Wrong</TH>
                 <TH className="text-right">Missed</TH><TH className="hidden text-right md:table-cell">Accuracy</TH><TH className="hidden text-right md:table-cell">Completion</TH><TH className="hidden text-right lg:table-cell">Streak</TH>
               </tr>
             </THead>
@@ -79,6 +86,9 @@ export default async function AdminLeaderboardPage({ searchParams }: PageProps<"
                     <p className="text-xs text-muted-foreground">{r.email}</p>
                     {!r.isActive && <Badge tone="danger">Disabled</Badge>}
                   </TD>
+                  <TD>
+                    <Badge tone="neutral">{r.team ?? "General"}</Badge>
+                  </TD>
                   <TD className="text-right font-semibold tabular-nums">{r.score}</TD>
                   <TD className="text-right tabular-nums">{r.correct}</TD>
                   <TD className="text-right tabular-nums">{r.wrong}</TD>
@@ -90,7 +100,7 @@ export default async function AdminLeaderboardPage({ searchParams }: PageProps<"
               ))}
             </TBody>
           </Table>
-          <Pagination page={q.page} pageSize={pageSize} total={total} basePath="/admin/leaderboard" searchParams={{ competitionId: ctx.selectedId, search: q.search, sort: q.sort, dir: q.dir }} />
+          <Pagination page={q.page} pageSize={pageSize} total={total} basePath="/admin/leaderboard" searchParams={{ competitionId: ctx.selectedId, search: q.search, team: q.team, sort: q.sort, dir: q.dir }} />
         </Card>
       )}
     </>

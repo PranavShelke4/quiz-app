@@ -54,13 +54,10 @@ describe("API manipulation attacks", () => {
     expect((await User.findOne({ email: "mallory@example.com" }).lean())!.role).toBe("USER");
   });
 
-  it("unauthenticated and unverified users cannot submit", async () => {
+  it("unauthenticated users cannot submit", async () => {
     const comp = await createRunningCompetition({ startOffsetDays: -1 });
     setNow(dayMiddle(comp, 2));
     expect((await call(submitRoute, { body: { optionId: "A" } })).json.error?.code).toBe("UNAUTHORIZED");
-    const unverified = await createUser({ verified: false });
-    const res = await call(submitRoute, { cookie: await sessionCookieFor(unverified._id), body: { optionId: "A" } });
-    expect(res.json.error?.code).toBe("EMAIL_NOT_VERIFIED");
   });
 
   it("Attack 8: client clock headers have no effect — only the server clock counts", async () => {

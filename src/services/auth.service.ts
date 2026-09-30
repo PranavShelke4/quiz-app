@@ -2,10 +2,9 @@ import type { Types } from "mongoose";
 import { createSession, revokeAllUserSessions, toSessionUser, type CookieToSet, type SessionUser } from "@/lib/auth/session";
 import { isAdminRole } from "@/lib/auth/rbac";
 import { connectDb } from "@/lib/db/mongoose";
-import { env } from "@/lib/env";
+import { appUrl, env } from "@/lib/env";
 import { AppError, isDuplicateKeyError } from "@/lib/errors";
 import { logger } from "@/lib/logger";
-import { sendPasswordResetEmail, sendVerificationEmail } from "@/lib/notifications/email";
 import { randomToken, safeEqual, sha256 } from "@/lib/security/crypto";
 import { hashPassword, verifyAgainstDummy, verifyPassword } from "@/lib/security/password";
 import { enforceRateLimit } from "@/lib/security/rate-limit";
@@ -16,8 +15,7 @@ import { User } from "@/models/User";
 import { recordAudit } from "@/services/audit.service";
 import { getSettings } from "@/services/settings.service";
 
-const VERIFY_TTL_MS = 24 * 3_600_000;
-const RESET_TTL_MS = 3_600_000;
+const RESET_TTL_MS = 24 * 3_600_000;
 const HOUR_MS = 3_600_000;
 
 type Meta = Pick<RequestMeta, "ip" | "userAgent">;
@@ -42,7 +40,7 @@ async function consumeToken(token: string, type: AuthTokenType): Promise<Types.O
 }
 
 export async function signup(
-  input: { name: string; email: string; password: string },
+  input: { name: string; email: string; password: string; team?: string },
   meta: Meta,
 ): Promise<{ user: SessionUser; cookie: CookieToSet }> {
   await connectDb();
@@ -54,14 +52,12 @@ export async function signup(
   let user;
   try {
     // Role is never taken from input; every self-registered account is USER.
-    [user] = await User.create([{ name: input.name, email: input.email, passwordHash, role: "USER" }]);
+    [user] = await User.create([{ name: input.name, email: input.email, passwordHash, role: "USER", team: input.team || "General" }]);
   } catch (e) {
     if (isDuplicateKeyError(e)) throw new AppError("EMAIL_IN_USE");
     throw e;
   }
 
-  const token = await issueToken(user._id, "VERIFY_EMAIL", VERIFY_TTL_MS);
-  await sendVerificationEmail(user.email, user.name, token);
   const { cookie } = await createSession({ userId: user._id, kind: "USER", meta });
   await User.updateOne({ _id: user._id }, { $set: { lastLoginAt: now(), lastLoginIp: meta.ip } });
   return { user: toSessionUser(user), cookie };
@@ -128,50 +124,23 @@ export async function login(
   return { user: toSessionUser(user), cookie };
 }
 
-export async function resendVerification(userId: Types.ObjectId): Promise<void> {
-  await connectDb();
-  const user = await User.findById(userId).lean();
-  if (!user || user.isEmailVerified) return;
-  await enforceRateLimit({ key: `verify-resend:u:${String(userId)}`, limit: 3, windowMs: HOUR_MS });
-  const token = await issueToken(user._id, "VERIFY_EMAIL", VERIFY_TTL_MS);
-  await sendVerificationEmail(user.email, user.name, token);
-}
-
-export async function verifyEmail(token: string): Promise<void> {
-  await connectDb();
-  const userId = await consumeToken(token, "VERIFY_EMAIL");
-  await User.updateOne({ _id: userId }, { $set: { isEmailVerified: true, emailVerifiedAt: now() } });
-}
-
-/** Always resolves the same way regardless of whether the email exists (no enumeration). */
-export async function requestPasswordReset(email: string, meta: Meta): Promise<void> {
-  await connectDb();
-  await enforceRateLimit({ key: `forgot:ip:${meta.ip ?? "unknown"}`, limit: 10, windowMs: HOUR_MS });
-  await enforceRateLimit({ key: `forgot:email:${sha256(email)}`, limit: 3, windowMs: HOUR_MS });
-  const user = await User.findOne({ email }).lean();
-  if (!user || !user.isActive) return;
-  const token = await issueToken(user._id, "RESET_PASSWORD", RESET_TTL_MS);
-  await sendPasswordResetEmail(user.email, user.name, token);
-}
-
-/** Admin-triggered reset: sends the user a reset link. Admins never see or set passwords. */
-export async function sendAdminInitiatedReset(userId: Types.ObjectId): Promise<void> {
+/**
+ * Admin-triggered reset: returns a one-time link for the admin to hand to the user
+ * (there is no email delivery). Admins never see or set passwords.
+ */
+export async function createPasswordResetLink(userId: Types.ObjectId): Promise<string> {
   const user = await User.findById(userId).lean();
   if (!user) throw new AppError("NOT_FOUND");
   const token = await issueToken(user._id, "RESET_PASSWORD", RESET_TTL_MS);
-  await sendPasswordResetEmail(user.email, user.name, token);
+  return appUrl(`/reset-password?token=${encodeURIComponent(token)}`);
 }
 
 export async function resetPassword(token: string, password: string): Promise<void> {
   await connectDb();
   const userId = await consumeToken(token, "RESET_PASSWORD");
   const passwordHash = await hashPassword(password);
-  // Owning the inbox proves the email; clear lockout; kill every existing session.
-  await User.updateOne(
-    { _id: userId },
-    { $set: { passwordHash, isEmailVerified: true, failedLoginAttempts: 0, lockUntil: null } },
-  );
-  await User.updateOne({ _id: userId, emailVerifiedAt: null }, { $set: { emailVerifiedAt: now() } });
+  // Clear lockout and kill every existing session.
+  await User.updateOne({ _id: userId }, { $set: { passwordHash, failedLoginAttempts: 0, lockUntil: null } });
   await revokeAllUserSessions(userId);
 }
 
@@ -213,7 +182,7 @@ export async function setupFirstAdmin(
   const user = await User.findOneAndUpdate(
     { email: input.email },
     {
-      $set: { role: "SUPER_ADMIN", isEmailVerified: true, emailVerifiedAt: now(), isActive: true, passwordHash },
+      $set: { role: "SUPER_ADMIN", isActive: true, passwordHash },
       $setOnInsert: { name: input.name, email: input.email },
     },
     { upsert: true, returnDocument: "after" },

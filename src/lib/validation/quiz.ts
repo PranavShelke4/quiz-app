@@ -38,6 +38,17 @@ const scoringSchema = z
 
 export const competitionBaseSchema = z.object({
   name: z.string().trim().min(3).max(100),
+  category: z.string().trim().max(60).optional(),
+  dailyStartTime: z
+    .string()
+    .trim()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm (e.g. 09:00)")
+    .optional(),
+  dailyEndTime: z
+    .string()
+    .trim()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm (e.g. 18:00)")
+    .optional(),
   slug: z
     .string()
     .trim()

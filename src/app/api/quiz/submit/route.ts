@@ -8,7 +8,7 @@ import { submitAnswer } from "@/services/quiz.service";
  * The response is identical for correct and incorrect answers.
  */
 export const POST = apiRoute(
-  "verified",
+  "user",
   { rateLimit: { name: "submit", limit: 20, windowMs: 60_000, by: "user" }, maxBodyBytes: 1024 },
   async (ctx) => {
     const input = await ctx.body(submitAnswerSchema);

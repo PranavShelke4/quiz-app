@@ -1,6 +1,6 @@
 "use client";
 
-import { BadgeCheck, KeyRound, LogOut, ShieldCheck, UserCheck, UserX } from "lucide-react";
+import { KeyRound, LogOut, ShieldCheck, UserCheck, UserX } from "lucide-react";
 import { useState } from "react";
 import { useAction } from "@/components/admin/use-action";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,6 @@ export function UserActions({
   id,
   name,
   isActive,
-  isEmailVerified,
   role,
   canManageRoles,
   isSelf,
@@ -19,7 +18,6 @@ export function UserActions({
   id: string;
   name: string;
   isActive: boolean;
-  isEmailVerified: boolean;
   role: string;
   canManageRoles: boolean;
   isSelf: boolean;
@@ -48,11 +46,6 @@ export function UserActions({
       <Button variant="outline" size="sm" loading={pending === "reset-password"} onClick={() => post({ action: "reset-password" }, "Password reset email sent.")}>
         <KeyRound /> Send password reset
       </Button>
-      {!isEmailVerified && (
-        <Button variant="outline" size="sm" loading={pending === "verify-email"} onClick={() => post({ action: "verify-email" }, "Email marked as verified.")}>
-          <BadgeCheck /> Verify email
-        </Button>
-      )}
       {canManageRoles && !isSelf && (
         <Button variant="outline" size="sm" onClick={() => setDialog("role")}>
           <ShieldCheck /> Change role

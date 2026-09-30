@@ -74,9 +74,8 @@ export default async function AdminDashboardPage() {
 
       <section aria-labelledby="user-stats" className="space-y-3">
         <h2 id="user-stats" className="flex items-center gap-2 font-semibold"><Users className="size-4" aria-hidden /> Users</h2>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
           <StatCard label="Total users" value={formatNumber(d.users.totalUsers)} />
-          <StatCard label="Verified" value={formatNumber(d.users.verifiedUsers)} />
           <StatCard label="Active (30d)" value={formatNumber(d.users.activeUsers)} />
           <StatCard label="Disabled" value={formatNumber(d.users.inactiveUsers)} />
           <StatCard label="New today" value={formatNumber(d.users.newToday)} />

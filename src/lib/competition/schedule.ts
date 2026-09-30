@@ -10,6 +10,7 @@ import {
   diffLocalDates,
   localDateInZone,
   startOfLocalDay,
+  zonedTimeToUtc,
   type LocalDate,
 } from "@/lib/time/zoned";
 
@@ -17,6 +18,8 @@ export interface ScheduleInput {
   startDate: Date;
   durationDays: number;
   timezone: string;
+  dailyStartTime?: string; // "09:00"
+  dailyEndTime?: string; // "18:00"
 }
 
 export type CompetitionPhase = "NOT_STARTED" | "ACTIVE" | "ENDED";
@@ -57,17 +60,31 @@ export function computeEndDate(localStartDate: LocalDate, durationDays: number, 
   return startOfLocalDay(addDaysToLocalDate(localStartDate, durationDays), timezone);
 }
 
+function parseHourMinute(timeStr?: string, defaultHour = 9, defaultMinute = 0): { hour: number; minute: number } {
+  if (!timeStr) return { hour: defaultHour, minute: defaultMinute };
+  const parts = timeStr.split(":").map(Number);
+  const h = parts[0];
+  const m = parts[1];
+  return {
+    hour: Number.isInteger(h) && h! >= 0 && h! <= 23 ? h! : defaultHour,
+    minute: Number.isInteger(m) && m! >= 0 && m! <= 59 ? m! : defaultMinute,
+  };
+}
+
 export function getDayWindow(input: ScheduleInput, dayNumber: number): DayWindow {
   if (!Number.isInteger(dayNumber) || dayNumber < 1 || dayNumber > input.durationDays) {
     throw new RangeError(`Day ${dayNumber} is outside 1..${input.durationDays}`);
   }
   const start = startLocalDate(input);
   const localDate = addDaysToLocalDate(start, dayNumber - 1);
+  const { hour: startHour, minute: startMinute } = parseHourMinute(input.dailyStartTime, 9, 0);
+  const { hour: endHour, minute: endMinute } = parseHourMinute(input.dailyEndTime, 18, 0);
+
   return {
     dayNumber,
     localDate,
-    opensAt: startOfLocalDay(localDate, input.timezone),
-    closesAt: startOfLocalDay(addDaysToLocalDate(localDate, 1), input.timezone),
+    opensAt: zonedTimeToUtc(localDate, input.timezone, startHour, startMinute, 0),
+    closesAt: zonedTimeToUtc(localDate, input.timezone, endHour, endMinute, 0),
   };
 }
 
@@ -77,8 +94,10 @@ export function getAllDayWindows(input: ScheduleInput): DayWindow[] {
 
 export function getCompetitionClock(input: ScheduleInput, at: Date): CompetitionClock {
   const start = startLocalDate(input);
-  const startsAt = startOfLocalDay(start, input.timezone);
-  const endsAt = computeEndDate(start, input.durationDays, input.timezone);
+  const day1Window = getDayWindow(input, 1);
+  const finalDayWindow = getDayWindow(input, input.durationDays);
+  const startsAt = day1Window.opensAt;
+  const endsAt = finalDayWindow.closesAt;
   const base = { startsAt, endsAt, durationDays: input.durationDays };
 
   if (at.getTime() < startsAt.getTime()) {
@@ -90,13 +109,16 @@ export function getCompetitionClock(input: ScheduleInput, at: Date): Competition
 
   const elapsed = diffLocalDates(start, localDateInZone(at, input.timezone));
   const currentDay = Math.min(Math.max(elapsed + 1, 1), input.durationDays);
+  const today = getDayWindow(input, currentDay);
+  const lastClosedDay = at.getTime() >= today.closesAt.getTime() ? currentDay : currentDay - 1;
+
   return {
     ...base,
     phase: "ACTIVE",
     currentDay,
-    lastClosedDay: currentDay - 1,
-    today: getDayWindow(input, currentDay),
-    daysRemaining: input.durationDays - currentDay,
+    lastClosedDay,
+    today,
+    daysRemaining: Math.max(0, input.durationDays - currentDay),
   };
 }
 

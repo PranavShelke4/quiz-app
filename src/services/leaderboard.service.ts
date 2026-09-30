@@ -139,7 +139,9 @@ export async function hideLeaderboard(compId: string, actor: Actor) {
 
 export interface LeaderboardEntryDTO {
   rank: number;
+  overallRank?: number;
   name: string;
+  team: string;
   avatar: string | null;
   isMe: boolean;
   score: number;
@@ -152,13 +154,24 @@ export interface LeaderboardEntryDTO {
   longestStreak: number;
 }
 
-function toEntry(p: ICompetitionParticipant, user: { name: string; avatar: string | null } | undefined, comp: ICompetition, meId?: string): LeaderboardEntryDTO {
+export interface TeamStandingDTO {
+  team: string;
+  rank: number;
+  avgScore: number;
+  totalScore: number;
+  totalCorrect: number;
+  totalParticipants: number;
+}
+
+function toEntry(p: ICompetitionParticipant, user: { name: string; avatar: string | null; team?: string } | undefined, comp: ICompetition, meId?: string, teamRank?: number): LeaderboardEntryDTO {
   const correct = p.finalCorrect ?? p.correctAnswers;
   const wrong = p.finalWrong ?? p.wrongAnswers;
   const answered = correct + wrong;
   return {
-    rank: p.finalRank ?? 0,
+    rank: teamRank ?? p.finalRank ?? 0,
+    overallRank: p.finalRank ?? 0,
     name: user?.name ?? "Former participant",
+    team: p.team || user?.team || "General",
     avatar: user?.avatar ?? null,
     isMe: String(p.userId) === meId,
     score: p.finalScore ?? p.totalScore,
@@ -175,7 +188,7 @@ function toEntry(p: ICompetitionParticipant, user: { name: string; avatar: strin
 export type LockedLeaderboard = { daysRemaining: number; endsAt: string; phase: string };
 
 /** Throws LEADERBOARD_LOCKED (with lock details) until results are revealed. */
-export async function getPublicLeaderboard(params: { userId?: Types.ObjectId; page: number; pageSize: number; at?: Date }) {
+export async function getPublicLeaderboard(params: { userId?: Types.ObjectId; team?: string; page: number; pageSize: number; at?: Date }) {
   await connectDb();
   const at = params.at ?? now();
   let comp = await getCurrentCompetition(at);
@@ -188,21 +201,66 @@ export async function getPublicLeaderboard(params: { userId?: Types.ObjectId; pa
     throw new AppError("LEADERBOARD_LOCKED", undefined, details);
   }
 
-  const filter = { competitionId: comp._id, finalRank: { $ne: null } };
-  const [rows, total] = await Promise.all([
-    CompetitionParticipant.find(filter).sort({ finalRank: 1, userId: 1 }).skip((params.page - 1) * params.pageSize).limit(params.pageSize).lean(),
-    CompetitionParticipant.countDocuments(filter),
-  ]);
-  const me = params.userId ? await CompetitionParticipant.findOne({ competitionId: comp._id, userId: params.userId }).lean() : null;
-  const userIds = [...rows.map((r) => r.userId), ...(me ? [me.userId] : [])];
-  const users = await User.find({ _id: { $in: userIds } }).select("name avatar").lean();
+  // Load all participants to compute team standings & team-wise filtering
+  const allParticipants = await CompetitionParticipant.find({ competitionId: comp._id, finalRank: { $ne: null } })
+    .sort({ finalRank: 1, userId: 1 })
+    .lean();
+
+  const allUserIds = allParticipants.map((p) => p.userId);
+  const users = await User.find({ _id: { $in: allUserIds } }).select("name avatar team").lean();
   const userMap = new Map(users.map((u) => [String(u._id), u]));
+
+  // Compute team standings
+  const teamAgg = new Map<string, { totalScore: number; totalCorrect: number; count: number }>();
+  for (const p of allParticipants) {
+    const u = userMap.get(String(p.userId));
+    const team = p.team || u?.team || "General";
+    const existing = teamAgg.get(team) ?? { totalScore: 0, totalCorrect: 0, count: 0 };
+    existing.totalScore += p.finalScore ?? p.totalScore;
+    existing.totalCorrect += p.finalCorrect ?? p.correctAnswers;
+    existing.count += 1;
+    teamAgg.set(team, existing);
+  }
+
+  const teamList = Array.from(teamAgg.entries())
+    .map(([team, stats]) => ({
+      team,
+      avgScore: Math.round((stats.totalScore / stats.count) * 10) / 10,
+      totalScore: stats.totalScore,
+      totalCorrect: stats.totalCorrect,
+      totalParticipants: stats.count,
+    }))
+    .sort((a, b) => b.avgScore - a.avgScore || b.totalScore - a.totalScore);
+
+  const teamStandings: TeamStandingDTO[] = teamList.map((t, idx) => ({ ...t, rank: idx + 1 }));
+
+  // Filter by team if requested
+  const isFiltered = params.team && params.team !== "All";
+  const filteredParticipants = isFiltered
+    ? allParticipants.filter((p) => {
+        const u = userMap.get(String(p.userId));
+        return (p.team || u?.team || "General") === params.team;
+      })
+    : allParticipants;
+
+  const total = filteredParticipants.length;
+  const pagedRows = filteredParticipants.slice((params.page - 1) * params.pageSize, params.page * params.pageSize);
+
+  const me = params.userId ? await CompetitionParticipant.findOne({ competitionId: comp._id, userId: params.userId }).lean() : null;
   const meId = params.userId ? String(params.userId) : undefined;
+  const meTeamIndex = isFiltered && me ? filteredParticipants.findIndex((p) => String(p.userId) === meId) : -1;
+  const meTeamRank = meTeamIndex >= 0 ? meTeamIndex + 1 : undefined;
 
   return {
     competition: toPublicCompetition(comp, at),
-    entries: rows.map((r) => toEntry(r, userMap.get(String(r.userId)), comp, meId)),
-    me: me ? toEntry(me, userMap.get(String(me.userId)), comp, meId) : null,
+    entries: pagedRows.map((r, i) => {
+      const teamRank = isFiltered ? (params.page - 1) * params.pageSize + i + 1 : undefined;
+      return toEntry(r, userMap.get(String(r.userId)), comp, meId, teamRank);
+    }),
+    teamStandings,
+    availableTeams: Array.from(teamAgg.keys()),
+    selectedTeam: params.team ?? "All",
+    me: me ? toEntry(me, userMap.get(String(me.userId)), comp, meId, meTeamRank) : null,
     total,
     page: params.page,
     pageSize: params.pageSize,
@@ -261,6 +319,7 @@ export type AdminLeaderboardSort = "rank" | "score" | "correct" | "wrong" | "mis
 export async function getAdminLeaderboard(params: {
   competitionId: string;
   search?: string;
+  team?: string;
   sort?: AdminLeaderboardSort;
   dir?: "asc" | "desc";
   page: number;
@@ -269,7 +328,7 @@ export async function getAdminLeaderboard(params: {
   await connectDb();
   const comp = await getCompetitionById(params.competitionId);
   const participants = await CompetitionParticipant.find({ competitionId: comp._id }).lean();
-  const users = await User.find({ _id: { $in: participants.map((p) => p.userId) } }).select("name email avatar isActive").lean();
+  const users = await User.find({ _id: { $in: participants.map((p) => p.userId) } }).select("name email avatar team isActive").lean();
   const userMap = new Map(users.map((u) => [String(u._id), u]));
 
   // Live rank with the competition's configured tie-breakers (final rank once frozen).
@@ -281,11 +340,13 @@ export async function getAdminLeaderboard(params: {
     const p = r.participant;
     const u = userMap.get(String(p.userId));
     const answered = p.correctAnswers + p.wrongAnswers;
+    const team = p.team || u?.team || "General";
     return {
       userId: String(p.userId),
       rank: r.rank,
       name: u?.name ?? "Deleted user",
       email: u?.email ?? "",
+      team,
       isActive: u?.isActive ?? false,
       score: p.totalScore,
       correct: p.correctAnswers,
@@ -299,6 +360,10 @@ export async function getAdminLeaderboard(params: {
       joinedAt: p.joinedAt.toISOString(),
     };
   });
+
+  if (params.team && params.team !== "All") {
+    rows = rows.filter((r) => r.team === params.team);
+  }
 
   if (params.search) {
     const re = new RegExp(escapeRegex(params.search), "i");

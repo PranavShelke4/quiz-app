@@ -63,11 +63,12 @@ export interface QuizStateDTO {
   competition: PublicCompetitionDTO | null;
   isParticipant: boolean;
   canJoin: boolean;
-  emailVerified: boolean;
   today:
-    | { status: "OPEN"; dayNumber: number; closesAt: string; question: UserQuestionDTO }
-    | { status: "ANSWERED"; dayNumber: number; closesAt: string; submittedAt: string; selectedOptionId: OptionId; question: UserQuestionDTO }
-    | { status: "UNAVAILABLE"; dayNumber: number; closesAt: string }
+    | { status: "OPEN"; dayNumber: number; opensAt: string; closesAt: string; question: UserQuestionDTO }
+    | { status: "ANSWERED"; dayNumber: number; opensAt: string; closesAt: string; submittedAt: string; selectedOptionId: OptionId; question: UserQuestionDTO }
+    | { status: "UNAVAILABLE"; dayNumber: number; opensAt: string; closesAt: string }
+    | { status: "UPCOMING"; dayNumber: number; opensAt: string; closesAt: string }
+    | { status: "CLOSED"; dayNumber: number; opensAt: string; closesAt: string }
     | null;
   nextQuestionAt: string | null;
   progress: ProgressDTO | null;
@@ -107,44 +108,63 @@ async function loadProgress(comp: ICompetition, userId: Types.ObjectId, at: Date
 
 export async function getQuizState(userId: Types.ObjectId, at: Date = now()): Promise<QuizStateDTO> {
   await connectDb();
-  const [comp, user] = await Promise.all([getCurrentCompetition(at), User.findById(userId).select("isEmailVerified").lean()]);
-  const emailVerified = !!user?.isEmailVerified;
-  if (!comp) return { competition: null, isParticipant: false, canJoin: false, emailVerified, today: null, nextQuestionAt: null, progress: null };
+  const comp = await getCurrentCompetition(at);
+  if (!comp) return { competition: null, isParticipant: false, canJoin: false, today: null, nextQuestionAt: null, progress: null };
 
   const clock = clockFor(comp, at);
   const participant = await getParticipant(comp._id, userId);
   if (participant) await repairUserMissedDays(comp, userId, at);
 
+  const dayNumber = clock.currentDay!;
+  const todayWindow = clock.today!;
+  const opensAt = todayWindow.opensAt.toISOString();
+  const closesAt = todayWindow.closesAt.toISOString();
+  const nowMs = at.getTime();
+
+  let nextQuestionAt: string | null = null;
+  if (clock.phase === "NOT_STARTED") {
+    nextQuestionAt = clock.startsAt.toISOString();
+  } else if (clock.phase === "ACTIVE") {
+    if (nowMs < todayWindow.opensAt.getTime()) {
+      nextQuestionAt = todayWindow.opensAt.toISOString();
+    } else if (dayNumber < comp.durationDays) {
+      const nextWindow = getDayWindow(comp, dayNumber + 1);
+      nextQuestionAt = nextWindow.opensAt.toISOString();
+    }
+  }
+
   const base = {
     competition: toPublicCompetition(comp, at),
     isParticipant: !!participant,
     canJoin: !participant && isRegistrationOpen(comp, at),
-    emailVerified,
     progress: participant ? await loadProgress(comp, userId, at) : null,
-    nextQuestionAt:
-      clock.phase === "NOT_STARTED"
-        ? clock.startsAt.toISOString()
-        : clock.phase === "ACTIVE" && clock.currentDay! < comp.durationDays
-          ? clock.today!.closesAt.toISOString()
-          : null,
+    nextQuestionAt,
   };
 
   if (clock.phase !== "ACTIVE") return { ...base, today: null };
 
-  const dayNumber = clock.currentDay!;
-  const closesAt = clock.today!.closesAt.toISOString();
-  const question = await Question.findOne({ competitionId: comp._id, dayNumber, status: "PUBLISHED" }).lean();
-  if (!question) return { ...base, today: { status: "UNAVAILABLE", dayNumber, closesAt } };
+  if (nowMs < todayWindow.opensAt.getTime()) {
+    return { ...base, today: { status: "UPCOMING", dayNumber, opensAt, closesAt } };
+  }
 
   const answer = participant
     ? await DailyAnswer.findOne({ competitionId: comp._id, userId, dayNumber }).select("status selectedOptionId answeredAt").lean()
     : null;
+
+  if (nowMs >= todayWindow.closesAt.getTime() && (!answer || answer.status !== "ANSWERED")) {
+    return { ...base, today: { status: "CLOSED", dayNumber, opensAt, closesAt } };
+  }
+
+  const question = await Question.findOne({ competitionId: comp._id, dayNumber, status: "PUBLISHED" }).lean();
+  if (!question) return { ...base, today: { status: "UNAVAILABLE", dayNumber, opensAt, closesAt } };
+
   if (answer?.status === "ANSWERED" && answer.selectedOptionId && answer.answeredAt) {
     return {
       ...base,
       today: {
         status: "ANSWERED",
         dayNumber,
+        opensAt,
         closesAt,
         submittedAt: answer.answeredAt.toISOString(),
         selectedOptionId: answer.selectedOptionId,
@@ -152,7 +172,7 @@ export async function getQuizState(userId: Types.ObjectId, at: Date = now()): Pr
       },
     };
   }
-  return { ...base, today: { status: "OPEN", dayNumber, closesAt, question: toUserQuestion(question, comp) } };
+  return { ...base, today: { status: "OPEN", dayNumber, opensAt, closesAt, question: toUserQuestion(question, comp) } };
 }
 
 /**
@@ -218,9 +238,8 @@ export async function submitAnswer(params: {
     if (params.expectedDayNumber > dayNumber) throw new AppError("QUESTION_NOT_AVAILABLE");
   }
 
-  const user = await User.findById(params.userId).select("isActive isEmailVerified").lean();
+  const user = await User.findById(params.userId).select("isActive").lean();
   if (!user || !user.isActive) throw new AppError("USER_DISABLED");
-  if (!user.isEmailVerified) throw new AppError("EMAIL_NOT_VERIFIED");
 
   const question = await Question.findOne({ competitionId: comp._id, dayNumber, status: "PUBLISHED" }).lean();
   if (!question) throw new AppError("QUESTION_NOT_AVAILABLE");
@@ -228,6 +247,13 @@ export async function submitAnswer(params: {
   if (!question.options.some((o) => o.id === params.optionId)) throw new AppError("INVALID_OPTION");
 
   const window = getDayWindow(comp, dayNumber);
+  if (at.getTime() < window.opensAt.getTime()) {
+    throw new AppError("QUESTION_NOT_AVAILABLE", "Today's question opens at 9:00 AM.");
+  }
+  if (at.getTime() >= window.closesAt.getTime()) {
+    throw new AppError("QUESTION_EXPIRED", "Today's question closed at 6:00 PM.");
+  }
+
   const { isCorrect, score } = scoreAnswer({
     selectedOptionId: params.optionId,
     correctOptionId: question.correctOptionId,
@@ -238,6 +264,7 @@ export async function submitAnswer(params: {
   try {
     await withTransaction(async (session) => {
       // Re-check the window at write time (the request may have waited on the transaction).
+      if (now().getTime() < window.opensAt.getTime()) throw new AppError("QUESTION_NOT_AVAILABLE");
       if (now().getTime() >= window.closesAt.getTime()) throw new AppError("QUESTION_EXPIRED");
 
       await joinCompetition(comp, params.userId, { session, at });
@@ -285,9 +312,8 @@ export async function joinCurrentCompetition(userId: Types.ObjectId, at: Date = 
   await connectDb();
   const comp = await getCurrentCompetition(at);
   if (!comp) throw new AppError("COMPETITION_NOT_FOUND");
-  const user = await User.findById(userId).select("isEmailVerified isActive").lean();
+  const user = await User.findById(userId).select("isActive").lean();
   if (!user?.isActive) throw new AppError("USER_DISABLED");
-  if (!user.isEmailVerified) throw new AppError("EMAIL_NOT_VERIFIED");
   await withTransaction((session) => joinCompetition(comp, userId, { session, at }));
   return { joined: true, competitionId: String(comp._id) };
 }

@@ -13,6 +13,10 @@ export interface ICompetition {
   slug: string;
   description: string;
 
+  category: string;
+  dailyStartTime: string;
+  dailyEndTime: string;
+
   /** UTC instant of local 00:00 on Day 1 in `timezone`. */
   startDate: Date;
   /** Exclusive end: local 00:00 after the final day (derived from start + duration). */
@@ -60,6 +64,9 @@ export interface ICompetition {
 const CompetitionSchema = new Schema<ICompetition>(
   {
     name: { type: String, required: true, trim: true, maxlength: 100 },
+    category: { type: String, default: "All", trim: true, maxlength: 60 },
+    dailyStartTime: { type: String, default: "09:00", trim: true },
+    dailyEndTime: { type: String, default: "18:00", trim: true },
     slug: { type: String, required: true, lowercase: true, trim: true, maxlength: 80 },
     description: { type: String, default: "", maxlength: 2000 },
     startDate: { type: Date, required: true },

@@ -6,7 +6,6 @@ import { POST as logoutRoute } from "@/app/api/auth/logout/route";
 import { POST as resetRoute } from "@/app/api/auth/reset-password/route";
 import { GET as sessionRoute } from "@/app/api/auth/session/route";
 import { POST as signupRoute } from "@/app/api/auth/signup/route";
-import { POST as verifyRoute } from "@/app/api/auth/verify-email/route";
 import { POST as adminLoginRoute } from "@/app/api/admin/auth/login/route";
 import { User } from "@/models/User";
 import { Session } from "@/models/Session";
@@ -25,7 +24,6 @@ describe("Authentication", () => {
     const user = await User.findOne({ email: "pranav@example.com" }).select("+passwordHash").lean();
     expect(user!.passwordHash).toMatch(/^\$argon2id\$/);
     expect(user!.role).toBe("USER");
-    expect(user!.isEmailVerified).toBe(false);
     expect(JSON.stringify(res.json)).not.toContain("passwordHash");
     // Only the SHA-256 of the token is stored.
     const raw = cookieFromResponse(res.headers)!.split("=")[1]!;
@@ -38,14 +36,6 @@ describe("Authentication", () => {
     await call(signupRoute, { body: { name: "A B", email: "dup@example.com", password: PASSWORD, acceptTerms: true } });
     const dup = await call(signupRoute, { body: { name: "A B", email: "dup@example.com", password: PASSWORD, acceptTerms: true } });
     expect(dup.json.error?.code).toBe("EMAIL_IN_USE");
-  });
-
-  it("verifies email with a one-time token", async () => {
-    await call(signupRoute, { body: { name: "Ver Ify", email: "verify@example.com", password: PASSWORD, acceptTerms: true } });
-    const token = tokenFrom(sentEmails.at(-1)!.text);
-    expect((await call(verifyRoute, { body: { token } })).status).toBe(200);
-    expect((await User.findOne({ email: "verify@example.com" }).lean())!.isEmailVerified).toBe(true);
-    expect((await call(verifyRoute, { body: { token } })).json.error?.code).toBe("INVALID_TOKEN");
   });
 
   it("keeps the user signed in across requests (persistent session) until logout", async () => {

@@ -20,7 +20,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps<"/admin
   const q = parsed.success ? parsed.data : usersQuerySchema.parse({});
   const { items, total } = await listUsers(q);
   const qs = new URLSearchParams(Object.entries(raw).filter(([k, v]) => v && k !== "page")).toString();
-  const keep = { search: q.search, status: q.status, role: q.role, verified: q.verified, from: q.from, to: q.to, sort: q.sort, dir: q.dir };
+  const keep = { search: q.search, status: q.status, role: q.role, from: q.from, to: q.to, sort: q.sort, dir: q.dir };
 
   return (
     <>
@@ -32,7 +32,6 @@ export default async function AdminUsersPage({ searchParams }: PageProps<"/admin
       <FilterBar action="/admin/users" resetHref="/admin/users">
         <SearchInput defaultValue={q.search} placeholder="Search name or email" />
         <FilterSelect name="status" label="Status" value={q.status} options={[{ value: "", label: "Any" }, { value: "active", label: "Active" }, { value: "disabled", label: "Disabled" }]} />
-        <FilterSelect name="verified" label="Email" value={q.verified} options={[{ value: "", label: "Any" }, { value: "yes", label: "Verified" }, { value: "no", label: "Unverified" }]} />
         <FilterSelect name="role" label="Role" value={q.role} options={[{ value: "", label: "Any" }, { value: "USER", label: "User" }, { value: "ADMIN", label: "Admin" }, { value: "SUPER_ADMIN", label: "Super admin" }]} />
         <FilterDate name="from" label="Registered from" value={q.from} />
         <FilterDate name="to" label="to" value={q.to} />
@@ -69,7 +68,6 @@ export default async function AdminUsersPage({ searchParams }: PageProps<"/admin
                   <TD>
                     <div className="flex flex-wrap gap-1">
                       <Badge tone={u.isActive ? "success" : "danger"}>{u.isActive ? "Active" : "Disabled"}</Badge>
-                      {!u.isEmailVerified && <Badge tone="warning">Unverified</Badge>}
                     </div>
                   </TD>
                   <TD className="hidden text-xs md:table-cell">{u.role}</TD>

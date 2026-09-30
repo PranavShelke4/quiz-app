@@ -29,8 +29,8 @@ export interface SessionUser {
   name: string;
   email: string;
   role: Role;
+  team: string;
   avatar: string | null;
-  isEmailVerified: boolean;
 }
 
 export interface AuthContext {
@@ -51,14 +51,14 @@ export interface CookieToSet {
   };
 }
 
-export function toSessionUser(user: Pick<IUser, "_id" | "name" | "email" | "role" | "avatar" | "isEmailVerified">): SessionUser {
+export function toSessionUser(user: Pick<IUser, "_id" | "name" | "email" | "role" | "avatar"> & { team?: string }): SessionUser {
   return {
     id: String(user._id),
     name: user.name,
     email: user.email,
     role: user.role,
+    team: user.team ?? "General",
     avatar: user.avatar ?? null,
-    isEmailVerified: user.isEmailVerified,
   };
 }
 
@@ -131,7 +131,7 @@ export async function validateSessionToken(token: string | undefined | null): Pr
   if (session.expiresAt.getTime() <= t.getTime() || session.absoluteExpiresAt.getTime() <= t.getTime()) return null;
 
   const user = await User.findById(session.userId)
-    .select("name email role avatar isEmailVerified isActive sessionsInvalidatedAt")
+    .select("name email role avatar isActive sessionsInvalidatedAt")
     .lean();
   if (!user || !user.isActive) return null;
   if (user.sessionsInvalidatedAt && session.createdAt.getTime() < user.sessionsInvalidatedAt.getTime()) return null;

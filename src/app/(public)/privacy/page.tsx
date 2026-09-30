@@ -24,7 +24,7 @@ export default function PrivacyPage() {
       </section>
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">How we use it</h2>
-        <p>To run the competition, calculate results, send the emails you need (verification, password reset, reminders, results), and detect abuse.</p>
+        <p>To run the competition, calculate results, send the emails you need (password reset, reminders, results), and detect abuse.</p>
       </section>
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">What others can see</h2>

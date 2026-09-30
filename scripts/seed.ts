@@ -1,6 +1,6 @@
 /**
  * Seeds a local database: one SUPER_ADMIN, one published 30-day competition
- * with 30 questions, and (with --demo) a verified demo participant.
+ * with 30 questions, and (with --demo) a demo participant.
  *
  *   pnpm seed            # admin + competition
  *   pnpm seed --demo     # also a demo participant
@@ -31,7 +31,7 @@ async function upsertUser(email: string, name: string, role: "USER" | "SUPER_ADM
   const passwordHash = await hashPassword(password);
   await User.updateOne(
     { email },
-    { $set: { name, role, isActive: true, isEmailVerified: true, emailVerifiedAt: new Date(), passwordHash }, $setOnInsert: { email } },
+    { $set: { name, role, isActive: true, passwordHash }, $setOnInsert: { email } },
     { upsert: true },
   );
 }

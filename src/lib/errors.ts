@@ -20,7 +20,6 @@ export const ERROR_DEFINITIONS = {
   INVALID_CREDENTIALS: { status: 401, message: "Incorrect email or password." },
   ACCOUNT_LOCKED: { status: 423, message: "Too many failed sign-in attempts. Try again later or reset your password." },
   USER_DISABLED: { status: 403, message: "This account has been disabled. Contact support if you think this is a mistake." },
-  EMAIL_NOT_VERIFIED: { status: 403, message: "Please verify your email address first." },
   EMAIL_IN_USE: { status: 409, message: "An account with this email already exists." },
   INVALID_TOKEN: { status: 400, message: "This link is invalid or has expired." },
   REGISTRATION_DISABLED: { status: 403, message: "New registrations are currently closed." },

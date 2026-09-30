@@ -19,7 +19,7 @@ export const PASSWORD = "Str0ng!Passw0rd";
 
 let hashed: string | null = null;
 
-export async function createUser(opts: { email?: string; name?: string; role?: Role; verified?: boolean; active?: boolean } = {}) {
+export async function createUser(opts: { email?: string; name?: string; role?: Role; active?: boolean } = {}) {
   hashed ??= await hashPassword(PASSWORD);
   const [user] = await User.create([
     {
@@ -27,7 +27,6 @@ export async function createUser(opts: { email?: string; name?: string; role?: R
       email: opts.email ?? `user${Math.random().toString(36).slice(2, 10)}@example.com`,
       passwordHash: hashed,
       role: opts.role ?? "USER",
-      isEmailVerified: opts.verified ?? true,
       isActive: opts.active ?? true,
     },
   ]);

@@ -5,8 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Alert, Checkbox, Field, Input } from "@/components/ui/primitives";
+import { Alert, Checkbox, Field, Input, Select } from "@/components/ui/primitives";
 import { ApiClientError, api } from "@/lib/api/client";
+import { COMPANY_TEAMS } from "@/lib/teams";
 import { safeNextPath } from "@/lib/utils";
 import { PASSWORD_RULES } from "@/lib/validation/auth";
 
@@ -92,10 +93,11 @@ export function SignupForm() {
           name: fd.get("name"),
           email: fd.get("email"),
           password: fd.get("password"),
+          team: fd.get("team") || "General",
           acceptTerms: fd.get("acceptTerms") === "on",
         },
       });
-      toast.success("Account created — check your inbox to verify your email.");
+      toast.success("Account created.");
       router.replace("/dashboard");
       router.refresh();
     });
@@ -106,6 +108,13 @@ export function SignupForm() {
       {formError && <Alert tone="danger">{formError}</Alert>}
       <Field id="name" label="Name" error={errors.name} hint="Shown on the final leaderboard.">
         <Input {...fieldProps("name", errors)} autoComplete="name" required maxLength={60} />
+      </Field>
+      <Field id="team" label="Team / Department" error={errors.team} hint="Select your team or department.">
+        <Select id="team" name="team" defaultValue="Engineering">
+          {COMPANY_TEAMS.filter((t) => t !== "All").map((team) => (
+            <option key={team} value={team}>{team}</option>
+          ))}
+        </Select>
       </Field>
       <Field id="email" label="Email" error={errors.email}>
         <Input {...fieldProps("email", errors)} type="email" autoComplete="email" required inputMode="email" />
@@ -209,30 +218,5 @@ export function ResetPasswordForm({ token }: { token: string }) {
         Set new password
       </Button>
     </form>
-  );
-}
-
-export function ResendVerificationButton() {
-  const [busy, setBusy] = useState(false);
-  return (
-    <Button
-      variant="outline"
-      size="sm"
-      loading={busy}
-      loadingText="Sending…"
-      onClick={async () => {
-        setBusy(true);
-        try {
-          await api("/api/auth/resend-verification", { body: {} });
-          toast.success("Verification email sent.");
-        } catch (e) {
-          toast.error(e instanceof ApiClientError ? e.message : "Couldn't send the email.");
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      Resend email
-    </Button>
   );
 }

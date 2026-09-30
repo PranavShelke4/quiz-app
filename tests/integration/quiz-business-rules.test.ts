@@ -148,7 +148,9 @@ describe("Business rules", () => {
       if (day !== 2) await call(submitRoute, { cookie: rivalCookie, body: { optionId: wrongFor(day) } });
     }
     setNow(new Date(comp.endDate.getTime() + 60_000));
-    const res = await call(leaderboardRoute, { cookie });
+    const freshCookie = await sessionCookieFor(user._id);
+    const freshRivalCookie = await sessionCookieFor(rival._id);
+    const res = await call(leaderboardRoute, { cookie: freshCookie });
     expect(res.status).toBe(200);
     expect(res.json.data.entries.map((e: { name: string; rank: number }) => [e.name, e.rank])).toEqual([["Test User", 1], ["Rival", 2]]);
     expect(res.json.data.me).toMatchObject({ rank: 1, score: 3, correct: 3, wrong: 0, missed: 0, isMe: true });
@@ -159,7 +161,7 @@ describe("Business rules", () => {
     expect(stored).toMatchObject({ status: "COMPLETED", leaderboardRevealed: true });
     expect(stored!.finalizedAt).toBeTruthy();
 
-    const results = await call(resultsRoute, { cookie: rivalCookie });
+    const results = await call(resultsRoute, { cookie: freshRivalCookie });
     expect(results.status).toBe(200);
     const days = results.json.data.days as { dayNumber: number; result: string; correctOptionId: string; explanation: string }[];
     expect(days.map((d) => d.result)).toEqual(["WRONG", "MISSED", "WRONG"]);

@@ -26,9 +26,9 @@ export function toAdminUser(u: IUser) {
     name: u.name,
     email: u.email,
     role: u.role,
+    team: u.team ?? "General",
     avatar: u.avatar,
     isActive: u.isActive,
-    isEmailVerified: u.isEmailVerified,
     createdAt: u.createdAt.toISOString(),
     lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
     disabledReason: u.disabledReason,
@@ -36,7 +36,7 @@ export function toAdminUser(u: IUser) {
 }
 export type AdminUserDTO = ReturnType<typeof toAdminUser>;
 
-export function buildUserFilter(params: { search?: string; status?: string; role?: string; verified?: string; from?: string; to?: string }) {
+export function buildUserFilter(params: { search?: string; status?: string; role?: string; team?: string; from?: string; to?: string }) {
   const filter: Record<string, unknown> = {};
   if (params.search) {
     const re = { $regex: escapeRegex(params.search), $options: "i" };
@@ -45,8 +45,7 @@ export function buildUserFilter(params: { search?: string; status?: string; role
   if (params.status === "active") filter.isActive = true;
   if (params.status === "disabled") filter.isActive = false;
   if (params.role && ["USER", "ADMIN", "SUPER_ADMIN"].includes(params.role)) filter.role = params.role;
-  if (params.verified === "yes") filter.isEmailVerified = true;
-  if (params.verified === "no") filter.isEmailVerified = false;
+  if (params.team && params.team !== "All") filter.team = params.team;
   const created: Record<string, Date> = {};
   if (params.from && !Number.isNaN(Date.parse(params.from))) created.$gte = new Date(params.from);
   if (params.to && !Number.isNaN(Date.parse(params.to))) created.$lte = new Date(`${params.to}T23:59:59.999Z`);
@@ -58,7 +57,7 @@ export async function listUsers(params: {
   search?: string;
   status?: string;
   role?: string;
-  verified?: string;
+  team?: string;
   from?: string;
   to?: string;
   sort?: UserSort;
@@ -176,13 +175,6 @@ export async function adminSendPasswordReset(id: string, actor: Actor) {
   await recordAudit({ adminId: actor.userId, action: "USER_PASSWORD_RESET_SENT", targetType: "User", targetId: user._id, meta: actor.meta });
 }
 
-export async function adminVerifyEmail(id: string, actor: Actor) {
-  await connectDb();
-  const user = await loadTarget(id, actor);
-  await User.updateOne({ _id: user._id }, { $set: { isEmailVerified: true, emailVerifiedAt: now() } });
-  await recordAudit({ adminId: actor.userId, action: "USER_EMAIL_VERIFIED", targetType: "User", targetId: user._id, metadata: { manual: true }, meta: actor.meta });
-}
-
 /** SUPER_ADMIN only (enforced by route permission `admins:manage`). */
 export async function changeUserRole(id: string, role: Role, actor: Actor) {
   await connectDb();
@@ -211,19 +203,25 @@ export async function getOwnProfile(userId: Types.ObjectId) {
     id: String(user._id),
     name: user.name,
     email: user.email,
+    team: user.team ?? "General",
     avatar: user.avatar,
     role: user.role,
-    isEmailVerified: user.isEmailVerified,
     createdAt: user.createdAt.toISOString(),
     lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
   };
 }
 
-export async function updateOwnProfile(userId: Types.ObjectId, input: { name?: string; avatar?: string }) {
+export async function updateOwnProfile(userId: Types.ObjectId, input: { name?: string; team?: string; avatar?: string }) {
   await connectDb();
   const $set: Record<string, unknown> = {};
   if (input.name !== undefined) $set.name = input.name;
+  if (input.team !== undefined) $set.team = input.team;
   if (input.avatar !== undefined) $set.avatar = input.avatar || null;
-  if (Object.keys($set).length) await User.updateOne({ _id: userId }, { $set });
+  if (Object.keys($set).length) {
+    await User.updateOne({ _id: userId }, { $set });
+    if (input.team !== undefined) {
+      await CompetitionParticipant.updateMany({ userId }, { $set: { team: input.team } });
+    }
+  }
   return getOwnProfile(userId);
 }

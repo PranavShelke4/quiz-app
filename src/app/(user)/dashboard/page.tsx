@@ -54,8 +54,7 @@ export default async function DashboardPage() {
             {!state.isParticipant && state.canJoin && (
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground">You haven&apos;t joined {c.name} yet.</p>
-                <JoinButton disabled={!state.emailVerified} />
-                {!state.emailVerified && <p className="text-xs text-muted-foreground">Verify your email to join.</p>}
+                <JoinButton />
               </div>
             )}
             {!state.isParticipant && !state.canJoin && c.phase !== "ENDED" && (

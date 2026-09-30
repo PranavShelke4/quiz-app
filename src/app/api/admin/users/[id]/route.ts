@@ -5,7 +5,6 @@ import { hasPermission } from "@/lib/auth/rbac";
 import { AppError } from "@/lib/errors";
 import {
   adminSendPasswordReset,
-  adminVerifyEmail,
   changeUserRole,
   forceLogout,
   getUserDetail,
@@ -19,7 +18,6 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("enable") }),
   z.object({ action: z.literal("force-logout") }),
   z.object({ action: z.literal("reset-password") }),
-  z.object({ action: z.literal("verify-email") }),
   z.object({ action: z.literal("change-role"), role: z.enum(["USER", "ADMIN", "SUPER_ADMIN"]) }),
 ]);
 
@@ -39,9 +37,6 @@ export const POST = apiRoute<{ id: string }>("admin", { permission: "users:manag
       break;
     case "reset-password":
       await adminSendPasswordReset(id, actor);
-      break;
-    case "verify-email":
-      await adminVerifyEmail(id, actor);
       break;
     case "change-role":
       if (!hasPermission(actor.role, "admins:manage")) throw new AppError("FORBIDDEN", "Only a super admin can change roles.");

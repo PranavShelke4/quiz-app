@@ -15,7 +15,7 @@ export const GET = apiRoute("admin", { permission: "exports:generate" }, async (
   async function* rows() {
     let batch: unknown[][] = [];
     for await (const u of User.find(filter).sort({ createdAt: 1 }).lean().cursor()) {
-      batch.push([u.name, u.email, u.createdAt, u.isActive ? "Active" : "Disabled", u.isEmailVerified ? "Yes" : "No", u.role, u.lastLoginAt]);
+      batch.push([u.name, u.email, u.createdAt, u.isActive ? "Active" : "Disabled", u.role, u.lastLoginAt]);
       if (batch.length >= 500) {
         yield batch;
         batch = [];
@@ -23,5 +23,5 @@ export const GET = apiRoute("admin", { permission: "exports:generate" }, async (
     }
     if (batch.length) yield batch;
   }
-  return csvStreamResponse("users.csv", ["Name", "Email", "Registration Date", "Status", "Email Verified", "Role", "Last Login"], rows());
+  return csvStreamResponse("users.csv", ["Name", "Email", "Registration Date", "Status", "Role", "Last Login"], rows());
 });

@@ -1,6 +1,6 @@
 import { Schema, model, models, type Model, type Types } from "mongoose";
 
-export const AUTH_TOKEN_TYPES = ["VERIFY_EMAIL", "RESET_PASSWORD"] as const;
+export const AUTH_TOKEN_TYPES = ["RESET_PASSWORD"] as const;
 export type AuthTokenType = (typeof AUTH_TOKEN_TYPES)[number];
 
 export interface IAuthToken {

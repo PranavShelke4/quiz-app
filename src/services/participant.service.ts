@@ -7,6 +7,7 @@ import type { ICompetition } from "@/models/Competition";
 import { CompetitionParticipant, type ICompetitionParticipant } from "@/models/CompetitionParticipant";
 import { DailyAnswer } from "@/models/DailyAnswer";
 import { Question } from "@/models/Question";
+import { User } from "@/models/User";
 import { clockFor, isRegistrationOpen } from "@/services/competition.service";
 
 /**
@@ -154,8 +155,11 @@ export async function joinCompetition(
   if (existing) return existing;
   if (!isRegistrationOpen(comp, at)) throw new AppError("REGISTRATION_CLOSED");
 
+  const user = await User.findById(userId).select("team").session(options.session ?? null).lean();
+  const userTeam = user?.team ?? "General";
+
   try {
-    await CompetitionParticipant.create([{ competitionId: comp._id, userId, joinedAt: at }], options.session ? { session: options.session } : {});
+    await CompetitionParticipant.create([{ competitionId: comp._id, userId, team: userTeam, joinedAt: at }], options.session ? { session: options.session } : {});
   } catch (e) {
     if (!isDuplicateKeyError(e)) throw e;
   }

@@ -80,15 +80,6 @@ ${cta ? `<p style="margin:24px 0"><a href="${escapeHtml(cta.url)}" style="backgr
   return { text, html };
 }
 
-export async function sendVerificationEmail(to: string, name: string, token: string) {
-  const url = appUrl(`/verify-email?token=${encodeURIComponent(token)}`);
-  const body = layout("Verify your email", [`Hi ${name},`, "Confirm your email address to start competing. This link expires in 24 hours."], {
-    label: "Verify email",
-    url,
-  });
-  return sendEmail({ to, subject: "Verify your email", ...body });
-}
-
 export async function sendPasswordResetEmail(to: string, name: string, token: string) {
   const url = appUrl(`/reset-password?token=${encodeURIComponent(token)}`);
   const body = layout(

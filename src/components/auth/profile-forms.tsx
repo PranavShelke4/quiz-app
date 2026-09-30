@@ -4,11 +4,12 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, Field, Input } from "@/components/ui/primitives";
+import { Card, CardContent, CardHeader, CardTitle, Field, Input, Select } from "@/components/ui/primitives";
 import { ApiClientError, api } from "@/lib/api/client";
+import { COMPANY_TEAMS } from "@/lib/teams";
 import { PASSWORD_RULES } from "@/lib/validation/auth";
 
-export function ProfileForms({ name, avatar }: { name: string; avatar: string }) {
+export function ProfileForms({ name, avatar, team = "General" }: { name: string; avatar: string; team?: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState<"profile" | "password" | null>(null);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
@@ -28,7 +29,10 @@ export function ProfileForms({ name, avatar }: { name: string; avatar: string })
               setBusy("profile");
               setErrors({});
               try {
-                await api("/api/profile", { method: "PATCH", body: { name: fd.get("name"), avatar: fd.get("avatar") } });
+                await api("/api/profile", {
+                  method: "PATCH",
+                  body: { name: fd.get("name"), avatar: fd.get("avatar"), team: fd.get("team") },
+                });
                 toast.success("Profile saved.");
                 router.refresh();
               } catch (err) {
@@ -43,6 +47,13 @@ export function ProfileForms({ name, avatar }: { name: string; avatar: string })
           >
             <Field id="name" label="Display name" error={errors.name} hint="Shown on the final leaderboard.">
               <Input id="name" name="name" defaultValue={name} required maxLength={60} autoComplete="name" />
+            </Field>
+            <Field id="team" label="Team / Department" error={errors.team} hint="Your team for team-based competitions and leaderboards.">
+              <Select id="team" name="team" defaultValue={team}>
+                {COMPANY_TEAMS.filter((t) => t !== "All").map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </Select>
             </Field>
             <Field id="avatar" label="Avatar URL (optional)" error={errors.avatar} hint="An https:// image URL.">
               <Input id="avatar" name="avatar" type="url" defaultValue={avatar} placeholder="https://…" />

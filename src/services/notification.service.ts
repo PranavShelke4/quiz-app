@@ -49,7 +49,7 @@ async function insertNew(drafts: Draft[]): Promise<Draft[]> {
 }
 
 async function deliverEmails(drafts: Draft[], send: (to: string, name: string) => Promise<boolean>) {
-  const users = await User.find({ _id: { $in: drafts.map((d) => d.userId) }, isActive: true, isEmailVerified: true }).select("email name").lean();
+  const users = await User.find({ _id: { $in: drafts.map((d) => d.userId) }, isActive: true }).select("email name").lean();
   const userMap = new Map(users.map((u) => [String(u._id), u]));
   await runWithConcurrency(drafts, 5, async (d) => {
     const u = userMap.get(String(d.userId));

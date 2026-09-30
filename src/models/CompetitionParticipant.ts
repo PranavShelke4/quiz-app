@@ -8,6 +8,7 @@ export interface ICompetitionParticipant {
   _id: Types.ObjectId;
   competitionId: Types.ObjectId;
   userId: Types.ObjectId;
+  team: string;
   joinedAt: Date;
 
   totalScore: number;
@@ -36,6 +37,7 @@ const ParticipantSchema = new Schema<ICompetitionParticipant>(
   {
     competitionId: { type: Schema.Types.ObjectId, ref: "Competition", required: true },
     userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    team: { type: String, default: "General", trim: true, maxlength: 60 },
     joinedAt: { type: Date, required: true },
     totalScore: { type: Number, default: 0 },
     correctAnswers: { type: Number, default: 0 },
@@ -59,6 +61,7 @@ const ParticipantSchema = new Schema<ICompetitionParticipant>(
 ParticipantSchema.index({ competitionId: 1, userId: 1 }, { unique: true });
 ParticipantSchema.index({ competitionId: 1, finalRank: 1 });
 ParticipantSchema.index({ competitionId: 1, totalScore: -1, correctAnswers: -1 });
+ParticipantSchema.index({ competitionId: 1, team: 1 });
 ParticipantSchema.index({ userId: 1, joinedAt: -1 });
 
 export const CompetitionParticipant: Model<ICompetitionParticipant> =

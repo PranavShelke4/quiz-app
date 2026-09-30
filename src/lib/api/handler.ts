@@ -22,11 +22,10 @@ import { getSettings } from "@/services/settings.service";
  * Access levels:
  *  public   — no session required (session is still resolved if present)
  *  user     — any signed-in, active user
- *  verified — signed-in user with a verified email
  *  admin    — ADMIN/SUPER_ADMIN with an ADMIN session (created via /admin/login)
  *  cron     — `Authorization: Bearer $CRON_SECRET`
  */
-export type Access = "public" | "user" | "verified" | "admin" | "cron";
+export type Access = "public" | "user" | "admin" | "cron";
 
 export interface RouteContext<P> {
   req: NextRequest;
@@ -56,7 +55,7 @@ type Handler<C> = (ctx: C) => Promise<unknown>;
 const DEFAULT_MAX_BODY = 64 * 1024;
 
 export function apiRoute<P = Record<string, never>>(
-  access: "user" | "verified" | "admin",
+  access: "user" | "admin",
   options: Options,
   handler: Handler<AuthedContext<P>>,
 ): (req: NextRequest, ctx: { params: Promise<P> }) => Promise<Response>;
@@ -130,7 +129,7 @@ export function apiRoute<P>(
         },
       };
 
-      // `authorize` guarantees ctx.auth is set for user/verified/admin access levels.
+      // `authorize` guarantees ctx.auth is set for user/admin access levels.
       const result = await (handler as Handler<RouteContext<P>>)(ctx);
       response = result instanceof Response ? result : ok(result ?? null);
 
@@ -165,7 +164,6 @@ export function apiRoute<P>(
 async function authorize(access: Access, auth: AuthContext | null, permission?: Permission) {
   if (access === "public") return;
   if (!auth) throw new AppError("UNAUTHORIZED");
-  if (access === "verified" && !auth.user.isEmailVerified) throw new AppError("EMAIL_NOT_VERIFIED");
   if (access === "admin") {
     if (!isAdminRole(auth.user.role) || auth.session.kind !== "ADMIN") throw new AppError("FORBIDDEN");
     if (!hasPermission(auth.user.role, permission ?? "admin:access")) throw new AppError("FORBIDDEN");
