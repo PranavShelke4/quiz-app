@@ -227,7 +227,7 @@ export function QuizCard(props: Props) {
           <h2 id={`${groupId}-q`} className="text-lg font-semibold leading-snug sm:text-xl">
             {q.questionText}
           </h2>
-          {multi && <p className="text-sm font-medium text-primary">Select all that apply — every correct option is needed to score.</p>}
+          {multi && <p className="text-sm font-medium text-primary">Select all that apply. Every correct option is needed to score.</p>}
         </div>
 
         <div role={multi ? "group" : "radiogroup"} aria-labelledby={`${groupId}-q`} aria-disabled={locked || undefined} className="grid gap-2.5">

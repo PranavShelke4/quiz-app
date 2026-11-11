@@ -95,7 +95,7 @@ export function TimedQuiz(props: Props) {
       : []),
     ...(ac.shuffleOptions ? [{ icon: <Shuffle />, text: "Options are shuffled for every participant." }] : []),
     ...(ac.watermark ? [{ icon: <Copy />, text: "Copying is disabled and the question is watermarked with your name." }] : []),
-    ...(ac.requireFullscreen ? [{ icon: <Maximize />, text: "The quiz opens fullscreen where your browser supports it — don't exit it." }] : []),
+    ...(ac.requireFullscreen ? [{ icon: <Maximize />, text: "The quiz opens fullscreen where your browser supports it. Don't exit it." }] : []),
     { icon: <Ban />, text: "Turn on Do Not Disturb so calls or notifications don't interrupt you." },
   ];
 
@@ -125,7 +125,7 @@ export function TimedQuiz(props: Props) {
         </ul>
         {error && <Alert tone="danger">{error}</Alert>}
         <Button size="lg" className="h-14 w-full text-base" onClick={start} loading={busy} loadingText="Starting…">
-          <Play /> Start — {formatSeconds(ac.timeLimitSeconds)}
+          <Play /> Start ({formatSeconds(ac.timeLimitSeconds)})
         </Button>
       </div>
     </Card>

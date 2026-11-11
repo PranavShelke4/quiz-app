@@ -11,12 +11,12 @@ export default function TermsPage() {
   return (
     <article className="mx-auto max-w-3xl space-y-6 px-4 py-12 text-sm leading-relaxed sm:px-6">
       <h1 className="text-3xl font-semibold tracking-tight">Terms of service</h1>
-      <Alert tone="warning" title="Placeholder — requires legal review">
+      <Alert tone="warning" title="Placeholder: requires legal review">
         These terms are a starting template and must be reviewed by qualified counsel before use, especially if prizes are offered.
       </Alert>
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">1. Eligibility &amp; accounts</h2>
-        <p>One account per person. You are responsible for keeping your credentials secure. [Minimum age and eligible regions — to be completed.]</p>
+        <p>One account per person. You are responsible for keeping your credentials secure. [Minimum age and eligible regions: to be completed.]</p>
       </section>
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">2. Competition rules</h2>
@@ -28,15 +28,15 @@ export default function TermsPage() {
       </section>
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">4. Corrections &amp; final results</h2>
-        <p>Administrators may correct erroneous questions. Corrections are applied equally to all participants and documented. [Dispute process — to be completed.]</p>
+        <p>Administrators may correct erroneous questions. Corrections are applied equally to all participants and documented. [Dispute process: to be completed.]</p>
       </section>
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">5. Prizes</h2>
-        <p>[If prizes are offered: prize description, eligibility, tax, claiming process — to be completed.]</p>
+        <p>[If prizes are offered: prize description, eligibility, tax, claiming process: to be completed.]</p>
       </section>
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">6. Liability &amp; changes</h2>
-        <p>[Limitation of liability, governing law, and how these terms may change — to be completed.]</p>
+        <p>[Limitation of liability, governing law, and how these terms may change: to be completed.]</p>
       </section>
     </article>
   );

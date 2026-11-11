@@ -27,7 +27,7 @@ export const DEFAULT_RULE_SECTIONS: RuleSection[] = [
     description: "How each day's question works.",
     rules: [
       "One question is released every day and closes the same day (competition time zone).",
-      "Choose the correct option and submit. If a question says \"select all that apply\", choose every correct option — all of them are needed to score.",
+      "Choose the correct option and submit. If a question says \"select all that apply\", choose every correct option. All of them are needed to score.",
       "You get one submission per day. Answers can't be changed once submitted.",
       "A day you don't answer is recorded as missed and scores 0 points.",
     ],

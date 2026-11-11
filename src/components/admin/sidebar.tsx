@@ -19,6 +19,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { BrandMark, type BrandLogoSources } from "@/components/brand-mark";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -76,15 +77,13 @@ function ViewSiteLink({ className, onNavigate }: { className?: string; onNavigat
   );
 }
 
-export function AdminSidebar({ isSuper }: { isSuper: boolean }) {
+export function AdminSidebar({ isSuper, logos }: { isSuper: boolean; logos: BrandLogoSources }) {
   return (
     <aside className="hidden w-60 shrink-0 border-r bg-card lg:block">
+      <div className="brand-stripe h-1" aria-hidden />
       <div className="sticky top-0 flex h-dvh flex-col gap-6 p-4">
-        <Link href="/admin/dashboard" className="flex items-center gap-2 px-2 pt-1 font-semibold">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Trophy className="size-4" aria-hidden />
-          </span>
-          Quiz Admin
+        <Link href="/admin/dashboard" className="px-2 pt-1">
+          <BrandMark logos={logos} appName="Quiz Admin" />
         </Link>
         <nav aria-label="Admin">
           <NavLinks isSuper={isSuper} />
@@ -95,7 +94,7 @@ export function AdminSidebar({ isSuper }: { isSuper: boolean }) {
   );
 }
 
-export function AdminMobileNav({ isSuper }: { isSuper: boolean }) {
+export function AdminMobileNav({ isSuper, logos }: { isSuper: boolean; logos: BrandLogoSources }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -137,12 +136,7 @@ export function AdminMobileNav({ isSuper }: { isSuper: boolean }) {
             <button type="button" className="flex-1 bg-black/40" aria-label="Close navigation" onClick={() => setOpen(false)} />
             <nav aria-label="Admin" className="order-first flex h-dvh w-72 max-w-[85vw] flex-col overflow-y-auto border-r bg-card p-4 shadow-xl">
               <div className="mb-4 flex items-center justify-between">
-                <span className="flex items-center gap-2 font-semibold">
-                  <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                    <Trophy className="size-4" aria-hidden />
-                  </span>
-                  Quiz Admin
-                </span>
+                <BrandMark logos={logos} appName="Quiz Admin" />
                 <button type="button" onClick={() => setOpen(false)} className="rounded-lg p-2 hover:bg-muted" aria-label="Close navigation">
                   <X className="size-4" />
                 </button>

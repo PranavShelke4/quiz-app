@@ -11,26 +11,26 @@ const SITE_NAME = "Daily Quiz";
 
 export const metadata: Metadata = {
   metadataBase: new URL(appUrl),
-  title: { default: `${SITE_NAME} — One question a day. One month. One champion.`, template: `%s · ${SITE_NAME}` },
+  title: { default: `${SITE_NAME}: one question a day, one champion`, template: `%s · ${SITE_NAME}` },
   description:
-    "A 30-day quiz competition: one question every day, one answer, results hidden until the final leaderboard is revealed.",
+    "A daily quiz competition: one question every day, one answer, results hidden until the final leaderboard is revealed.",
   applicationName: SITE_NAME,
   openGraph: {
     type: "website",
     siteName: SITE_NAME,
-    title: `${SITE_NAME} — the 30-day quiz competition`,
-    description: "Answer one question a day for 30 days. Results stay hidden until the final reveal.",
+    title: `${SITE_NAME}: the daily quiz competition`,
+    description: "Answer one question a day. Results stay hidden until the final reveal.",
     url: "/",
   },
   twitter: {
     card: "summary_large_image",
-    title: `${SITE_NAME} — the 30-day quiz competition`,
-    description: "Answer one question a day for 30 days. Results stay hidden until the final reveal.",
+    title: `${SITE_NAME}: the daily quiz competition`,
+    description: "Answer one question a day. Results stay hidden until the final reveal.",
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#f8f9fc",
+  themeColor: "#004a7f",
   colorScheme: "light",
 };
 

@@ -130,7 +130,7 @@ export default async function DashboardPage() {
           <Card>
             <CardHeader>
               <CardTitle>Your {c.durationDays}-day journey</CardTitle>
-              <CardDescription>Participation only — correctness stays hidden until results are revealed.</CardDescription>
+              <CardDescription>Participation only. Correct answers stay hidden until results are revealed.</CardDescription>
             </CardHeader>
             <CardContent>
               <ProgressCalendar days={p.days} />

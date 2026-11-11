@@ -11,7 +11,7 @@ export default function PrivacyPage() {
   return (
     <article className="mx-auto max-w-3xl space-y-6 px-4 py-12 text-sm leading-relaxed sm:px-6">
       <h1 className="text-3xl font-semibold tracking-tight">Privacy policy</h1>
-      <Alert tone="warning" title="Placeholder — requires legal review">
+      <Alert tone="warning" title="Placeholder: requires legal review">
         This template describes how the software handles data. Have it reviewed by qualified counsel and adapt it to your jurisdiction before launch.
       </Alert>
       <section className="space-y-2">
@@ -36,7 +36,7 @@ export default function PrivacyPage() {
       </section>
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Retention &amp; your rights</h2>
-        <p>[Retention periods, data export/deletion process and contact details — to be completed by the operator.]</p>
+        <p>[Retention periods, data export/deletion process and contact details: to be completed by the operator.]</p>
       </section>
     </article>
   );

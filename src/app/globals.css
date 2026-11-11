@@ -1,31 +1,51 @@
 @import "tailwindcss";
 
 /*
- * Design tokens (light theme only). Neutral surfaces + one indigo accent; success/warn/danger are
- * reserved for system states (never for quiz correctness before reveal).
+ * Design tokens (light theme only), built on the ICICI Bank palette. Like the logo,
+ * red and orange lead and navy supports:
+ *   red    #AE282E  primary: buttons, links, active items, focus (white text on it: 6.6:1)
+ *   orange #F06321  highlights: badges, progress, timer, icons. Not for small white text (3.1:1).
+ *   navy   #004A7F  headings and navy bands (footer, sign-in panel), like the wordmark
+ *   white  #FFFFFF  cards and surfaces
+ * Neutrals are cool greys tinted toward the navy. success/warning/danger stay reserved for
+ * system states (never for quiz correctness before reveal).
  */
 :root {
-  --background: oklch(0.985 0.002 264);
-  --foreground: oklch(0.21 0.02 264);
-  --card: oklch(1 0 0);
+  --brand-navy: #004a7f;
+  --brand-navy-deep: #00365d;
+  --brand-red: #ae282e;
+  --brand-orange: #f06321;
+  --brand-gradient: linear-gradient(90deg, var(--brand-red) 0%, var(--brand-orange) 100%);
+
+  --background: #f5f7fa;
+  --foreground: #10223a;
+  --card: #ffffff;
   --card-foreground: var(--foreground);
-  --muted: oklch(0.965 0.004 264);
-  --muted-foreground: oklch(0.5 0.02 264);
-  --border: oklch(0.915 0.006 264);
-  --input: oklch(0.88 0.008 264);
-  --ring: oklch(0.55 0.2 272);
-  --primary: oklch(0.47 0.2 272);
-  --primary-foreground: oklch(0.99 0 0);
-  --primary-soft: oklch(0.95 0.035 272);
-  --primary-soft-foreground: oklch(0.38 0.17 272);
-  --secondary: oklch(0.955 0.006 264);
-  --secondary-foreground: oklch(0.25 0.02 264);
-  --success: oklch(0.52 0.13 155);
-  --success-soft: oklch(0.95 0.04 155);
-  --warning: oklch(0.6 0.14 70);
-  --warning-soft: oklch(0.96 0.05 85);
-  --danger: oklch(0.55 0.2 25);
-  --danger-soft: oklch(0.96 0.03 25);
+  --muted: #eef2f6;
+  --muted-foreground: #556579;
+  --border: #dde4ec;
+  --input: #c9d3de;
+  --ring: #ae282e;
+  --primary: #ae282e;
+  --primary-foreground: #ffffff;
+  --primary-soft: #f9eaeb;
+  --primary-soft-foreground: #8a1d22;
+  --secondary: #eef2f6;
+  --secondary-foreground: #1c2f47;
+  /* Brand red for highlights that aren't actions (headline words, active markers). */
+  --brand: #ae282e;
+  --brand-soft: #f9eaeb;
+  /* Orange emphasis; text on the soft tint uses a darker orange to stay readable (5.2:1). */
+  --accent: #f06321;
+  --accent-soft: #fdeee5;
+  --accent-soft-foreground: #9c3a0c;
+  --success: #1f7a4d;
+  --success-soft: #e6f4ec;
+  --warning: #a35a00;
+  --warning-soft: #fdf2e1;
+  /* Darker than the brand red so destructive actions don't look like normal ones. */
+  --danger: #8f1218;
+  --danger-soft: #fbe9e9;
   --radius: 0.75rem;
   /* Light mode only: keep native form controls, scrollbars and dialogs light too. */
   color-scheme: light;
@@ -53,6 +73,15 @@
   --color-warning-soft: var(--warning-soft);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-navy: var(--brand-navy);
+  --color-brand-navy-deep: var(--brand-navy-deep);
+  --color-brand-red: var(--brand-red);
+  --color-brand-orange: var(--brand-orange);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-soft-foreground: var(--accent-soft-foreground);
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 4px);
   --radius-xl: calc(var(--radius) + 4px);
@@ -78,8 +107,13 @@
     outline-offset: 2px;
   }
   dialog::backdrop {
-    background: oklch(0.2 0.02 264 / 0.5);
+    background: rgb(0 30 52 / 0.5);
   }
+}
+
+/* Thin red-to-orange brand stripe (top of header, auth panel). */
+.brand-stripe {
+  background: var(--brand-gradient);
 }
 
 @media (prefers-reduced-motion: reduce) {

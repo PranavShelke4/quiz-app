@@ -39,7 +39,7 @@ export default async function ResultsPage() {
       <PageHeader eyebrow={`🏆 ${c.name}`} title="Your results" description="Review every question, the correct answer and why." />
       {summary ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-          <StatCard label="Rank" value={summary.rank ? `#${summary.rank}` : "—"} hint={`of ${summary.totalParticipants}`} className="border-primary/30 bg-primary-soft" />
+          <StatCard label="Rank" value={summary.rank ? `#${summary.rank}` : "-"} hint={`of ${summary.totalParticipants}`} className="border-primary/30 bg-primary-soft" />
           <StatCard label="Score" value={`${summary.score} / ${summary.maxScore}`} />
           <StatCard label="Correct" value={summary.correct} />
           <StatCard label="Wrong" value={summary.wrong} />

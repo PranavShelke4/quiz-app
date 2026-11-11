@@ -40,7 +40,7 @@ export default async function LeaderboardPage({ searchParams }: PageProps<"/lead
               <p className="mt-4 font-medium">{plural(d.daysRemaining, "day")} remaining after today.</p>
             </>
           )}
-          {d.phase === "ENDED" && <p className="mt-2 text-muted-foreground">The competition has ended — results will be published shortly.</p>}
+          {d.phase === "ENDED" && <p className="mt-2 text-muted-foreground">The competition has ended. Results will be published shortly.</p>}
           <ButtonLink href="/quiz" className="mt-6">
             Go to today&apos;s quiz
           </ButtonLink>

@@ -5,6 +5,7 @@ import { LogoutButton } from "@/components/auth/logout-button";
 import { AdminMobileNav, AdminSidebar } from "@/components/admin/sidebar";
 import { Avatar, Badge } from "@/components/ui/primitives";
 import { requireAdmin } from "@/lib/auth/dal";
+import { brandLogos } from "@/lib/brand";
 
 export const metadata: Metadata = {
   title: { default: "Admin", template: "%s · Admin" },
@@ -15,13 +16,14 @@ export default async function AdminPanelLayout({ children }: { children: React.R
   // Server-side authorization for every admin page (proxy only does a cookie-presence check).
   const auth = await requireAdmin();
   const isSuper = auth.user.role === "SUPER_ADMIN";
+  const logos = brandLogos();
   return (
     <div className="flex min-h-dvh">
-      <AdminSidebar isSuper={isSuper} />
+      <AdminSidebar isSuper={isSuper} logos={logos} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b bg-background/90 px-4 backdrop-blur sm:px-6">
           <div className="flex min-w-0 items-center gap-2">
-            <AdminMobileNav isSuper={isSuper} />
+            <AdminMobileNav isSuper={isSuper} logos={logos} />
             <span className="truncate font-semibold lg:hidden">Quiz Admin</span>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">

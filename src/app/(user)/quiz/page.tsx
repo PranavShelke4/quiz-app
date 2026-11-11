@@ -54,7 +54,7 @@ export default async function QuizPage() {
       <EmptyState
         icon={<Trophy />}
         title="Competition completed"
-        description={c.leaderboardRevealed ? "Results are out — see how you did." : "Thanks for playing! Results will be revealed soon."}
+        description={c.leaderboardRevealed ? "Results are out. See how you did." : "Thanks for playing! Results will be revealed soon."}
         action={<ButtonLink href={c.leaderboardRevealed ? "/results" : "/leaderboard"}>{c.leaderboardRevealed ? "View results" : "Leaderboard"}</ButtonLink>}
       />
     );

@@ -9,6 +9,12 @@ export const metadata: Metadata = {
   alternates: { canonical: "/rules" },
 };
 
+/** "09:00" → "9:00 AM" */
+function clockLabel(hhmm: string): string {
+  const [h, m] = hhmm.split(":").map(Number);
+  return `${((h! + 11) % 12) + 1}:${String(m ?? 0).padStart(2, "0")} ${h! < 12 ? "AM" : "PM"}`;
+}
+
 export default async function RulesPage() {
   const comp = await getCurrentCompetition().catch(() => null);
   const c = comp ? toPublicCompetition(comp) : null;
@@ -54,7 +60,7 @@ export default async function RulesPage() {
             <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed">
               <li>You have {c.antiCheat.timeLimitSeconds} seconds to answer after pressing Start, checked by the server.</li>
               {c.antiCheat.lockOnLeave && (
-                <li>Switching apps or tabs, locking your phone, reloading, or opening the quiz on another device ends that day&apos;s attempt — it&apos;s recorded as missed.</li>
+                <li>Switching apps or tabs, locking your phone, reloading, or opening the quiz on another device ends that day&apos;s attempt, and it&apos;s recorded as missed.</li>
               )}
               {c.antiCheat.shuffleOptions && <li>Options appear in a different order for each participant.</li>}
               {c.antiCheat.watermark && <li>Questions are watermarked with your name, and copying is disabled.</li>}
@@ -71,8 +77,8 @@ export default async function RulesPage() {
         </CardHeader>
         <CardContent className="space-y-2 text-sm leading-relaxed">
           <p>
-            Every question opens at 12:00 AM and closes at 11:59:59 PM in the competition time zone{c ? ` (${c.timezone})` : ""}. The server clock decides —
-            changing your device&apos;s time has no effect.
+            Every question opens at {clockLabel(c?.dailyStartTime ?? "09:00")} and closes at {clockLabel(c?.dailyEndTime ?? "18:00")} in the competition time
+            zone{c ? ` (${c.timezone})` : ""}. The server clock decides, so changing your device&apos;s time has no effect.
           </p>
           <p>If you don&apos;t answer before the question closes, that day is recorded as missed and scores 0 points. Missed days can&apos;t be answered later.</p>
         </CardContent>
@@ -89,7 +95,7 @@ export default async function RulesPage() {
             <li>Missed day: 0 points.</li>
           </ul>
           <p>
-            Your score, correct answers and rank stay hidden while the competition runs — you&apos;ll only see how many days you&apos;ve answered, missed, and your
+            Your score, correct answers and rank stay hidden while the competition runs. You&apos;ll only see how many days you&apos;ve answered, missed, and your
             streak. When the competition ends the final leaderboard, correct answers and explanations are revealed.
           </p>
           <div>
