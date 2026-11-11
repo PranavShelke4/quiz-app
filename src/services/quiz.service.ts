@@ -2,7 +2,8 @@ import type { Types } from "mongoose";
 import { getDayWindow } from "@/lib/competition/schedule";
 import { connectDb, withTransaction } from "@/lib/db/mongoose";
 import { AppError, isDuplicateKeyError } from "@/lib/errors";
-import { scoreAnswer } from "@/lib/quiz/scoring";
+import { antiCheatOf, type AntiCheatSettings, type LockReason } from "@/lib/quiz/anticheat-config";
+import { correctIdsOf, scoreAnswer, selectedIdsOf } from "@/lib/quiz/scoring";
 import { computeStreaks } from "@/lib/quiz/streak";
 import type { RequestMeta } from "@/lib/security/request-meta";
 import { now } from "@/lib/time/clock";
@@ -10,6 +11,7 @@ import type { OptionId } from "@/lib/validation/quiz";
 import type { ICompetition } from "@/models/Competition";
 import { DailyAnswer } from "@/models/DailyAnswer";
 import { Question, type IQuestion } from "@/models/Question";
+import { QuizAttempt } from "@/models/QuizAttempt";
 import { User } from "@/models/User";
 import {
   clockFor,
@@ -19,6 +21,9 @@ import {
   toPublicCompetition,
   type PublicCompetitionDTO,
 } from "@/services/competition.service";
+import { flagFastAnswer } from "@/services/anticheat.service";
+import { questionForParticipant } from "@/services/pool.service";
+import { currentAttempt, displayMapping, displayOptions, lockAttempt, prepareAttemptSubmission } from "@/services/attempt.service";
 import { getParticipant, joinCompetition, recalculateParticipantStats, repairUserMissedDays } from "@/services/participant.service";
 
 // ---------------------------------------------------------------------------
@@ -30,6 +35,8 @@ export interface UserQuestionDTO {
   dayNumber: number;
   questionText: string;
   options: { id: OptionId; text: string }[];
+  /** True when more than one option is correct ("select all that apply"). Which ones stays secret. */
+  multiSelect: boolean;
   points: number;
   category: string;
   difficulty: string;
@@ -41,6 +48,7 @@ export function toUserQuestion(q: IQuestion, comp: ICompetition): UserQuestionDT
     dayNumber: q.dayNumber,
     questionText: q.questionText,
     options: q.options.map((o) => ({ id: o.id, text: o.text })),
+    multiSelect: correctIdsOf(q).length > 1,
     points: q.points ?? comp.scoring.pointsPerCorrectAnswer,
     category: q.category,
     difficulty: q.difficulty,
@@ -59,18 +67,33 @@ export interface ProgressDTO {
   longestStreak: number;
 }
 
+/** What a participant may know before pressing Start (no text, no options). */
+export interface ReadyInfo {
+  points: number;
+  category: string;
+  difficulty: string;
+  multiSelect: boolean;
+  optionCount: number;
+}
+
 export interface QuizStateDTO {
   competition: PublicCompetitionDTO | null;
   isParticipant: boolean;
   canJoin: boolean;
   today:
     | { status: "OPEN"; dayNumber: number; opensAt: string; closesAt: string; question: UserQuestionDTO }
-    | { status: "ANSWERED"; dayNumber: number; opensAt: string; closesAt: string; submittedAt: string; selectedOptionId: OptionId; question: UserQuestionDTO }
+    | { status: "ANSWERED"; dayNumber: number; opensAt: string; closesAt: string; submittedAt: string; selectedOptionId: OptionId; selectedOptionIds: OptionId[]; question: UserQuestionDTO }
     | { status: "UNAVAILABLE"; dayNumber: number; opensAt: string; closesAt: string }
     /** The question is live but the user hasn't joined — its text and options are withheld. */
     | { status: "LOCKED"; dayNumber: number; opensAt: string; closesAt: string }
     | { status: "UPCOMING"; dayNumber: number; opensAt: string; closesAt: string }
     | { status: "CLOSED"; dayNumber: number; opensAt: string; closesAt: string }
+    /** Anti-cheat mode: question hidden until the participant presses Start. */
+    | { status: "READY"; dayNumber: number; opensAt: string; closesAt: string; info: ReadyInfo; antiCheat: AntiCheatSettings }
+    /** Anti-cheat mode, resumable attempts only (lockOnLeave off). Option ids are display ids. */
+    | { status: "IN_PROGRESS"; dayNumber: number; opensAt: string; closesAt: string; question: UserQuestionDTO; startedAt: string; deadlineAt: string; antiCheat: AntiCheatSettings }
+    /** Anti-cheat mode: today's attempt ended without an answer (recorded as missed). */
+    | { status: "ENDED"; dayNumber: number; opensAt: string; closesAt: string; reason: LockReason | "TIME_UP" }
     | null;
   nextQuestionAt: string | null;
   progress: ProgressDTO | null;
@@ -108,7 +131,7 @@ async function loadProgress(comp: ICompetition, userId: Types.ObjectId, at: Date
   };
 }
 
-export async function getQuizState(userId: Types.ObjectId, at: Date = now()): Promise<QuizStateDTO> {
+export async function getQuizState(userId: Types.ObjectId, at: Date = now(), opts: { sessionId?: Types.ObjectId | null } = {}): Promise<QuizStateDTO> {
   await connectDb();
   const comp = await getCurrentCompetition(at);
   if (!comp) return { competition: null, isParticipant: false, canJoin: false, today: null, nextQuestionAt: null, progress: null };
@@ -117,54 +140,77 @@ export async function getQuizState(userId: Types.ObjectId, at: Date = now()): Pr
   const participant = await getParticipant(comp._id, userId);
   if (participant) await repairUserMissedDays(comp, userId, at);
 
-  const dayNumber = clock.currentDay!;
-  const todayWindow = clock.today!;
-  const opensAt = todayWindow.opensAt.toISOString();
-  const closesAt = todayWindow.closesAt.toISOString();
   const nowMs = at.getTime();
-
-  let nextQuestionAt: string | null = null;
-  if (clock.phase === "NOT_STARTED") {
-    nextQuestionAt = clock.startsAt.toISOString();
-  } else if (clock.phase === "ACTIVE") {
-    if (nowMs < todayWindow.opensAt.getTime()) {
-      nextQuestionAt = todayWindow.opensAt.toISOString();
-    } else if (dayNumber < comp.durationDays) {
-      const nextWindow = getDayWindow(comp, dayNumber + 1);
-      nextQuestionAt = nextWindow.opensAt.toISOString();
-    }
-  }
-
   const base = {
     competition: toPublicCompetition(comp, at),
     isParticipant: !!participant,
     canJoin: !participant && isRegistrationOpen(comp, at),
     progress: participant ? await loadProgress(comp, userId, at) : null,
-    nextQuestionAt,
   };
 
-  if (clock.phase !== "ACTIVE") return { ...base, today: null };
+  // Only an ACTIVE competition has a "today"; before the start / after the end there is no day window.
+  if (clock.phase !== "ACTIVE" || !clock.today || clock.currentDay === null) {
+    return { ...base, nextQuestionAt: clock.phase === "NOT_STARTED" ? clock.startsAt.toISOString() : null, today: null };
+  }
+
+  const dayNumber = clock.currentDay;
+  const todayWindow = clock.today;
+  const opensAt = todayWindow.opensAt.toISOString();
+  const closesAt = todayWindow.closesAt.toISOString();
+
+  let nextQuestionAt: string | null = null;
+  if (nowMs < todayWindow.opensAt.getTime()) {
+    nextQuestionAt = opensAt;
+  } else if (dayNumber < comp.durationDays) {
+    nextQuestionAt = getDayWindow(comp, dayNumber + 1).opensAt.toISOString();
+  }
+  const active = { ...base, nextQuestionAt };
 
   if (nowMs < todayWindow.opensAt.getTime()) {
-    return { ...base, today: { status: "UPCOMING", dayNumber, opensAt, closesAt } };
+    return { ...active, today: { status: "UPCOMING", dayNumber, opensAt, closesAt } };
   }
 
   const answer = participant
-    ? await DailyAnswer.findOne({ competitionId: comp._id, userId, dayNumber }).select("status selectedOptionId answeredAt").lean()
+    ? await DailyAnswer.findOne({ competitionId: comp._id, userId, dayNumber }).select("status selectedOptionId selectedOptionIds answeredAt questionId").lean()
     : null;
 
   if (nowMs >= todayWindow.closesAt.getTime() && (!answer || answer.status !== "ANSWERED")) {
-    return { ...base, today: { status: "CLOSED", dayNumber, opensAt, closesAt } };
+    return { ...active, today: { status: "CLOSED", dayNumber, opensAt, closesAt } };
   }
 
-  const question = await Question.findOne({ competitionId: comp._id, dayNumber, status: "PUBLISHED" }).lean();
-  if (!question) return { ...base, today: { status: "UNAVAILABLE", dayNumber, opensAt, closesAt } };
+  // Question pools: the question already answered/started wins; otherwise this participant's version.
+  const pinnedId = answer?.questionId ?? (participant ? (await QuizAttempt.findOne({ competitionId: comp._id, userId, dayNumber }).select("questionId").lean())?.questionId : null);
+  const question = pinnedId
+    ? await Question.findById(pinnedId).lean()
+    : await questionForParticipant(comp._id, dayNumber, userId);
+  if (!question) return { ...active, today: { status: "UNAVAILABLE", dayNumber, opensAt, closesAt } };
   // Only participants ever receive the question text and options.
-  if (!participant) return { ...base, today: { status: "LOCKED", dayNumber, opensAt, closesAt } };
+  if (!participant) return { ...active, today: { status: "LOCKED", dayNumber, opensAt, closesAt } };
+
+  const ac = antiCheatOf(comp);
+  const attempt = ac.enabled || answer ? await currentAttempt(comp, userId, dayNumber, at) : null;
 
   if (answer?.status === "ANSWERED" && answer.selectedOptionId && answer.answeredAt) {
+    if (attempt) {
+      // Show the question the way this participant saw it (their option order and letters).
+      const { toDisplay } = displayMapping(attempt.optionOrder);
+      const shown = selectedIdsOf(answer).map(toDisplay);
+      return {
+        ...active,
+        today: {
+          status: "ANSWERED",
+          dayNumber,
+          opensAt,
+          closesAt,
+          submittedAt: answer.answeredAt.toISOString(),
+          selectedOptionId: shown[0]!,
+          selectedOptionIds: shown,
+          question: { ...toUserQuestion(question, comp), options: displayOptions(question, attempt.optionOrder) },
+        },
+      };
+    }
     return {
-      ...base,
+      ...active,
       today: {
         status: "ANSWERED",
         dayNumber,
@@ -172,11 +218,52 @@ export async function getQuizState(userId: Types.ObjectId, at: Date = now()): Pr
         closesAt,
         submittedAt: answer.answeredAt.toISOString(),
         selectedOptionId: answer.selectedOptionId,
+        selectedOptionIds: selectedIdsOf(answer) as OptionId[],
         question: toUserQuestion(question, comp),
       },
     };
   }
-  return { ...base, today: { status: "OPEN", dayNumber, opensAt, closesAt, question: toUserQuestion(question, comp) } };
+  if (attempt && attempt.status !== "STARTED" && attempt.status !== "SUBMITTED") {
+    return { ...active, today: { status: "ENDED", dayNumber, opensAt, closesAt, reason: attempt.status === "EXPIRED" ? "TIME_UP" : (attempt.lockReason ?? "LEFT_PAGE") } };
+  }
+  if (answer?.status === "MISSED") return { ...active, today: { status: "CLOSED", dayNumber, opensAt, closesAt } };
+
+  if (!ac.enabled) {
+    return { ...active, today: { status: "OPEN", dayNumber, opensAt, closesAt, question: toUserQuestion(question, comp) } };
+  }
+
+  if (attempt?.status === "STARTED") {
+    const sameSession = !!opts.sessionId && String(attempt.sessionId) === String(opts.sessionId);
+    // Loading the page while an attempt runs = a reload, another tab or another device.
+    if (ac.lockOnLeave) {
+      const ended = await lockAttempt(comp, attempt, sameSession ? "RELOADED" : "SECOND_DEVICE", at);
+      return { ...active, today: { status: "ENDED", dayNumber, opensAt, closesAt, reason: ended.lockReason ?? "RELOADED" } };
+    }
+    if (sameSession) {
+      return {
+        ...active,
+        today: {
+          status: "IN_PROGRESS",
+          dayNumber,
+          opensAt,
+          closesAt,
+          question: { ...toUserQuestion(question, comp), options: displayOptions(question, attempt.optionOrder) },
+          startedAt: attempt.startedAt.toISOString(),
+          deadlineAt: attempt.deadlineAt.toISOString(),
+          antiCheat: ac,
+        },
+      };
+    }
+  }
+
+  const info: ReadyInfo = {
+    points: question.points ?? comp.scoring.pointsPerCorrectAnswer,
+    category: question.category,
+    difficulty: question.difficulty,
+    multiSelect: correctIdsOf(question).length > 1,
+    optionCount: question.options.length,
+  };
+  return { ...active, today: { status: "READY", dayNumber, opensAt, closesAt, info, antiCheat: ac } };
 }
 
 /**
@@ -197,7 +284,9 @@ export async function getQuestionForDay(userId: Types.ObjectId, dayParam: string
     throw new AppError("QUESTION_EXPIRED", isLeaderboardRevealed(comp, at) ? "This question has closed. Review it on the results page." : undefined);
   }
   if (day > clock.currentDay!) throw new AppError("QUESTION_NOT_AVAILABLE");
-  const q = await Question.findOne({ competitionId: comp._id, dayNumber: day, status: "PUBLISHED" }).lean();
+  // Timed mode: the text is only released through POST /api/quiz/attempt/start.
+  if (antiCheatOf(comp).enabled) throw new AppError("ATTEMPT_REQUIRED");
+  const q = await questionForParticipant(comp._id, day, userId);
   if (!q) throw new AppError("QUESTION_NOT_AVAILABLE");
   return toUserQuestion(q, comp);
 }
@@ -207,6 +296,7 @@ export interface SubmitResult {
   dayNumber: number;
   submittedAt: string;
   selectedOptionId: OptionId;
+  selectedOptionIds: OptionId[];
 }
 
 /**
@@ -221,7 +311,10 @@ export interface SubmitResult {
  */
 export async function submitAnswer(params: {
   userId: Types.ObjectId;
-  optionId: OptionId;
+  /** Single-answer questions. */
+  optionId?: OptionId;
+  /** Multiple-answer questions. */
+  optionIds?: OptionId[];
   expectedDayNumber?: number;
   expectedQuestionId?: string;
   sessionId?: Types.ObjectId | null;
@@ -247,10 +340,23 @@ export async function submitAnswer(params: {
   if (!user || !user.isActive) throw new AppError("USER_DISABLED");
   if (!(await getParticipant(comp._id, params.userId))) throw new AppError("NOT_PARTICIPANT", "Join the competition before answering.");
 
-  const question = await Question.findOne({ competitionId: comp._id, dayNumber, status: "PUBLISHED" }).lean();
-  if (!question) throw new AppError("QUESTION_NOT_AVAILABLE");
+  let picked: string[] = [...new Set(params.optionIds?.length ? params.optionIds : params.optionId ? [params.optionId] : [])];
+  // Timed mode: the client sent display letters; map them to the real ids via the attempt.
+  const ac = antiCheatOf(comp);
+  const timed = ac.enabled
+    ? await prepareAttemptSubmission({ comp, userId: params.userId, dayNumber, sessionId: params.sessionId ?? null, displayIds: picked, at })
+    : null;
+  if (timed) picked = timed.realIds;
+
+  // The question this participant was shown: the attempt's in timed mode, else their pool version.
+  const question = timed ? await Question.findById(timed.attempt.questionId).lean() : await questionForParticipant(comp._id, dayNumber, params.userId);
+  if (!question || question.status !== "PUBLISHED") throw new AppError("QUESTION_NOT_AVAILABLE");
   if (params.expectedQuestionId && params.expectedQuestionId !== String(question._id)) throw new AppError("QUESTION_EXPIRED");
-  if (!question.options.some((o) => o.id === params.optionId)) throw new AppError("INVALID_OPTION");
+  const multiSelect = correctIdsOf(question).length > 1;
+  // Store in option order so "C,A" and "A,C" are the same answer.
+  const selectedIds = question.options.map((o) => o.id).filter((id) => picked.includes(id));
+  if (!picked.length || selectedIds.length !== picked.length) throw new AppError("INVALID_OPTION");
+  if (!multiSelect && selectedIds.length > 1) throw new AppError("INVALID_OPTION", "Choose exactly one option.");
 
   const window = getDayWindow(comp, dayNumber);
   if (at.getTime() < window.opensAt.getTime()) {
@@ -261,8 +367,8 @@ export async function submitAnswer(params: {
   }
 
   const { isCorrect, score } = scoreAnswer({
-    selectedOptionId: params.optionId,
-    correctOptionId: question.correctOptionId,
+    selectedOptionIds: selectedIds,
+    correctOptionIds: correctIdsOf(question),
     questionPoints: question.points,
     config: comp.scoring,
   });
@@ -278,6 +384,8 @@ export async function submitAnswer(params: {
         .session(session)
         .lean();
       if (existing) throw new AppError(existing.status === "MISSED" ? "QUESTION_EXPIRED" : "ANSWER_ALREADY_SUBMITTED");
+      // Marks the attempt SUBMITTED in this transaction; fails if it was locked meanwhile.
+      if (timed) await timed.claim(session);
 
       await DailyAnswer.create(
         [
@@ -286,12 +394,13 @@ export async function submitAnswer(params: {
             userId: params.userId,
             dayNumber,
             questionId: question._id,
-            selectedOptionId: params.optionId,
+            selectedOptionId: selectedIds[0],
+            selectedOptionIds: selectedIds,
             isCorrect,
             score,
             status: "ANSWERED",
             answeredAt: at,
-            responseTimeMs: Math.max(0, at.getTime() - window.opensAt.getTime()),
+            responseTimeMs: timed ? timed.responseTimeMs : Math.max(0, at.getTime() - window.opensAt.getTime()),
             ip: params.meta?.ip ?? null,
             userAgent: params.meta?.userAgent ?? null,
             sessionId: params.sessionId ?? null,
@@ -309,7 +418,14 @@ export async function submitAnswer(params: {
   }
 
   // Note: the response is identical for correct and incorrect answers.
-  return { status: "ANSWERED", dayNumber, submittedAt: at.toISOString(), selectedOptionId: params.optionId };
+  if (timed && ac.flagFastAnswers) {
+    // Best effort: a failure to flag must never fail a recorded answer.
+    await flagFastAnswer({ competitionId: comp._id, userId: params.userId, dayNumber, question, responseMs: timed.responseTimeMs, isCorrect }).catch(() => 0);
+  }
+
+  // Echo the letters the participant saw (display ids in timed mode).
+  const echoed = timed ? selectedIds.map(displayMapping(timed.attempt.optionOrder).toDisplay) : selectedIds;
+  return { status: "ANSWERED", dayNumber, submittedAt: at.toISOString(), selectedOptionId: echoed[0]!, selectedOptionIds: echoed };
 }
 
 export async function joinCurrentCompetition(userId: Types.ObjectId, at: Date = now()) {

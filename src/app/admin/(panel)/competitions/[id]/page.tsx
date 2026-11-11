@@ -90,7 +90,9 @@ export default async function CompetitionDetailPage({ params }: PageProps<"/admi
             leaderboardRevealLocalDateTime: c.leaderboardRevealLocalDateTime,
             registrationOpen: c.registrationOpen,
             registrationCloseLocalDate: c.registrationCloseLocalDate,
-            rules: c.rules,
+            // Older competitions only have a flat list: show it as one editable section.
+            antiCheat: c.antiCheat,
+            ruleSections: c.ruleSections.length ? c.ruleSections : c.rules.length ? [{ title: "General rules", description: "", rules: c.rules }] : [],
           }}
         />
       )}
@@ -105,7 +107,7 @@ export default async function CompetitionDetailPage({ params }: PageProps<"/admi
               {corrections.map((x) => (
                 <li key={String(x._id)} className="py-3">
                   <p className="font-medium">
-                    Day {x.dayNumber}: {x.oldValue.correctOptionId} → {x.newValue.correctOptionId}
+                    Day {x.dayNumber}: {(x.oldValue.correctOptionIds ?? [x.oldValue.correctOptionId]).join(", ")} → {(x.newValue.correctOptionIds ?? [x.newValue.correctOptionId]).join(", ")}
                     {x.oldValue.points !== x.newValue.points && ` · points ${x.oldValue.points ?? "default"} → ${x.newValue.points ?? "default"}`}
                   </p>
                   <p className="text-muted-foreground">{x.reason}</p>

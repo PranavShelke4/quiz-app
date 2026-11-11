@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/primitives";
 import { formatDateTime } from "@/lib/utils";
-import { DEFAULT_RULES, getCurrentCompetition, toPublicCompetition } from "@/services/competition.service";
+import { DEFAULT_RULE_SECTIONS, getCurrentCompetition, toPublicCompetition } from "@/services/competition.service";
 
 export const metadata: Metadata = {
   title: "Competition rules",
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export default async function RulesPage() {
   const comp = await getCurrentCompetition().catch(() => null);
   const c = comp ? toPublicCompetition(comp) : null;
-  const rules = c?.rules ?? DEFAULT_RULES;
+  const sections = c?.ruleSections ?? DEFAULT_RULE_SECTIONS;
 
   return (
     <article className="mx-auto max-w-3xl space-y-8 px-4 py-12 sm:px-6">
@@ -26,18 +26,44 @@ export default async function RulesPage() {
         )}
       </header>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>The rules</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ol className="list-decimal space-y-3 pl-5 text-sm leading-relaxed">
-            {rules.map((r) => (
-              <li key={r}>{r}</li>
-            ))}
-          </ol>
-        </CardContent>
-      </Card>
+      {sections.map((section, i) => (
+        <Card key={`${i}-${section.title}`}>
+          <CardHeader className="space-y-1">
+            <CardTitle>{section.title}</CardTitle>
+            {section.description && <p className="text-sm text-muted-foreground">{section.description}</p>}
+          </CardHeader>
+          {section.rules.length > 0 && (
+            <CardContent>
+              <ol className="list-decimal space-y-3 pl-5 text-sm leading-relaxed">
+                {section.rules.map((r, k) => (
+                  <li key={k}>{r}</li>
+                ))}
+              </ol>
+            </CardContent>
+          )}
+        </Card>
+      ))}
+
+      {c?.antiCheat.enabled && (
+        <Card>
+          <CardHeader className="space-y-1">
+            <CardTitle>Timed questions &amp; fair play</CardTitle>
+            <p className="text-sm text-muted-foreground">Each day&apos;s question is hidden until you press Start.</p>
+          </CardHeader>
+          <CardContent>
+            <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed">
+              <li>You have {c.antiCheat.timeLimitSeconds} seconds to answer after pressing Start, checked by the server.</li>
+              {c.antiCheat.lockOnLeave && (
+                <li>Switching apps or tabs, locking your phone, reloading, or opening the quiz on another device ends that day&apos;s attempt — it&apos;s recorded as missed.</li>
+              )}
+              {c.antiCheat.shuffleOptions && <li>Options appear in a different order for each participant.</li>}
+              {c.antiCheat.watermark && <li>Questions are watermarked with your name, and copying is disabled.</li>}
+              {c.antiCheat.requireFullscreen && <li>The quiz opens fullscreen where your browser supports it.</li>}
+              <li>Tip: turn on Do Not Disturb before you start so a call or notification doesn&apos;t end your attempt.</li>
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

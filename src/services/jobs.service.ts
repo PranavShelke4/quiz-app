@@ -2,7 +2,7 @@ import { connectDb } from "@/lib/db/mongoose";
 import { logger } from "@/lib/logger";
 import { now } from "@/lib/time/clock";
 import { Competition } from "@/models/Competition";
-import { detectSuspiciousActivity } from "@/services/anticheat.service";
+import { detectSameWrongAnswers, detectSuspiciousActivity } from "@/services/anticheat.service";
 import { clockFor, syncCompetitionStatus } from "@/services/competition.service";
 import { ensureCompletionState } from "@/services/leaderboard.service";
 import { runReminders } from "@/services/notification.service";
@@ -45,7 +45,7 @@ export async function runScheduledJobs(at: Date = now()) {
         await Competition.updateOne({ _id: comp._id, missedProcessedThroughDay: { $lt: through } }, { $set: { missedProcessedThroughDay: through } });
         entry.missedRecordsFor = affected.length;
         entry.rolledOverThroughDay = through;
-        const flagged = await detectSuspiciousActivity(comp, through, at);
+        const flagged = (await detectSuspiciousActivity(comp, through, at)) + (await detectSameWrongAnswers(comp, through));
         if (flagged) entry.flagsRaised = flagged;
       }
 

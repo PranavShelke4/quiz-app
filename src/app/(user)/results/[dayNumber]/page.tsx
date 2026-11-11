@@ -56,8 +56,8 @@ export default async function ResultDayPage({ params }: PageProps<"/results/[day
           <h1 className="text-xl font-semibold leading-snug">{d.questionText}</h1>
           <ul className="grid gap-2.5">
             {d.options.map((o) => {
-              const isCorrect = o.id === d.correctOptionId;
-              const isMine = o.id === d.selectedOptionId;
+              const isCorrect = d.correctOptionIds.includes(o.id);
+              const isMine = d.selectedOptionIds.includes(o.id);
               return (
                 <li
                   key={o.id}
@@ -76,7 +76,9 @@ export default async function ResultDayPage({ params }: PageProps<"/results/[day
             })}
           </ul>
           <div className="rounded-xl bg-muted p-4 text-sm">
-            <p className="font-medium">Correct answer: Option {d.correctOptionId}</p>
+            <p className="font-medium">
+              {d.correctOptionIds.length > 1 ? `Correct answers: Options ${d.correctOptionIds.join(", ")}` : `Correct answer: Option ${d.correctOptionIds[0]}`}
+            </p>
             {d.explanation && (
               <p className="mt-2 text-muted-foreground">
                 <span className="font-medium text-foreground">Why: </span>

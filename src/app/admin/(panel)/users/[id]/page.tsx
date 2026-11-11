@@ -48,6 +48,7 @@ export default async function AdminUserDetailPage({ params }: PageProps<"/admin/
           <UserActions
             id={u.id}
             name={u.name}
+            email={u.email}
             isActive={u.isActive}
             role={u.role}
             canManageRoles={hasPermission(auth.user.role, "admins:manage")}

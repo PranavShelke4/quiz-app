@@ -1,4 +1,5 @@
-import { Schema, model, models, type Model, type Types } from "mongoose";
+import { Schema, type Model, type Types } from "mongoose";
+import { defineModel } from "@/lib/db/model";
 
 export const AUDIT_ACTIONS = [
   "ADMIN_LOGIN",
@@ -10,6 +11,8 @@ export const AUDIT_ACTIONS = [
   "USER_PASSWORD_RESET_SENT",
   "USER_EMAIL_VERIFIED",
   "USER_ROLE_CHANGED",
+  "USER_DELETED",
+  "USER_UPDATED",
   "GLOBAL_LOGOUT",
   "QUESTION_CREATED",
   "QUESTION_UPDATED",
@@ -86,4 +89,4 @@ AuditLogSchema.pre("save", function () {
 });
 
 export const AuditLog: Model<IAuditLog> =
-  (models.AuditLog as Model<IAuditLog>) ?? model<IAuditLog>("AuditLog", AuditLogSchema);
+  defineModel<IAuditLog>("AuditLog", AuditLogSchema);

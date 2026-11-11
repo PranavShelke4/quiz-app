@@ -1,4 +1,5 @@
-import { Schema, model, models, type Model, type Types } from "mongoose";
+import { Schema, type Model, type Types } from "mongoose";
+import { defineModel } from "@/lib/db/model";
 
 /** Fixed-window counters shared by all app instances. TTL index cleans old windows. */
 export interface IRateLimit {
@@ -20,4 +21,4 @@ RateLimitSchema.index({ key: 1, windowStart: 1 }, { unique: true });
 RateLimitSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export const RateLimit: Model<IRateLimit> =
-  (models.RateLimit as Model<IRateLimit>) ?? model<IRateLimit>("RateLimit", RateLimitSchema);
+  defineModel<IRateLimit>("RateLimit", RateLimitSchema);

@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { NextResponse, type NextRequest } from "next/server";
 import { z, ZodError, type ZodType } from "zod";
 import { fail, ok } from "@/lib/api/response";
@@ -182,6 +183,11 @@ function toErrorResponse(err: unknown, requestId: string): Response {
   }
   if (err instanceof ZodError) {
     return fail("VALIDATION_ERROR", undefined, { fields: z.flattenError(err).fieldErrors, formErrors: z.flattenError(err).formErrors });
+  }
+  // Schema-level validation from Mongoose (e.g. a document that fails a model validator): a client error, not a crash.
+  if (err instanceof mongoose.Error.ValidationError) {
+    const fields = Object.fromEntries(Object.entries(err.errors).map(([k, v]) => [k.split(".")[0]!, [v.message]]));
+    return fail("VALIDATION_ERROR", Object.values(err.errors)[0]?.message, { fields });
   }
   if (isDatabaseUnavailableError(err)) {
     logger.error("api.database_unavailable", { requestId, error: (err as Error).message });

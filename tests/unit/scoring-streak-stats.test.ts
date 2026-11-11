@@ -77,3 +77,12 @@ describe("participant stats aggregation", () => {
     expect(stats.lastAnsweredAt).toEqual(new Date(2026, 9, 4, 10));
   });
 });
+
+describe("too-fast threshold", () => {
+  it("scales with how much there is to read, with a 2 s floor", async () => {
+    const { minimumPlausibleAnswerMs } = await import("@/lib/quiz/anticheat-config");
+    expect(minimumPlausibleAnswerMs({ questionText: "2+2?", options: [{ text: "4" }, { text: "5" }] })).toBe(2000);
+    const long = { questionText: "x".repeat(150), options: [{ text: "y".repeat(75) }, { text: "z".repeat(75) }] };
+    expect(minimumPlausibleAnswerMs(long)).toBe(10_000); // 300 chars at 30/s
+  });
+});

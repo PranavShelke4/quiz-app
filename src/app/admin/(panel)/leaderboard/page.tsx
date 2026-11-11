@@ -58,9 +58,9 @@ export default async function AdminLeaderboardPage({ searchParams }: PageProps<"
         <SearchInput defaultValue={q.search} placeholder="Search participant" />
         <FilterSelect
           name="team"
-          label="Team / Category"
+          label="Track"
           value={q.team}
-          options={[{ value: "", label: "All teams" }, ...COMPANY_TEAMS.filter((t) => t !== "All").map((t) => ({ value: t, label: t }))]}
+          options={[{ value: "", label: "All tracks" }, ...COMPANY_TEAMS.filter((t) => t !== "All").map((t) => ({ value: t, label: t }))]}
         />
         <FilterSelect name="sort" label="Sort by" value={q.sort} options={["rank", "score", "correct", "wrong", "missed", "accuracy", "streak"].map((s) => ({ value: s, label: s[0]!.toUpperCase() + s.slice(1) }))} />
         <FilterSelect name="dir" label="Order" value={q.dir} options={[{ value: "", label: "Default" }, { value: "asc", label: "Ascending" }, { value: "desc", label: "Descending" }]} />
@@ -73,7 +73,7 @@ export default async function AdminLeaderboardPage({ searchParams }: PageProps<"
           <Table>
             <THead>
               <tr>
-                <TH>Rank</TH><TH>Participant</TH><TH>Team</TH><TH className="text-right">Score</TH><TH className="text-right">Correct</TH><TH className="text-right">Wrong</TH>
+                <TH>Rank</TH><TH>Participant</TH><TH>Track</TH><TH className="text-right">Score</TH><TH className="text-right">Correct</TH><TH className="text-right">Wrong</TH>
                 <TH className="text-right">Missed</TH><TH className="hidden text-right md:table-cell">Accuracy</TH><TH className="hidden text-right md:table-cell">Completion</TH><TH className="hidden text-right lg:table-cell">Streak</TH>
               </tr>
             </THead>

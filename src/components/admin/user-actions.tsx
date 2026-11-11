@@ -1,6 +1,7 @@
 "use client";
 
-import { Copy, KeyRound, LogOut, ShieldCheck, UserCheck, UserX } from "lucide-react";
+import { Copy, KeyRound, LogOut, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useAction } from "@/components/admin/use-action";
@@ -11,6 +12,7 @@ import { Field, Input, Select, Textarea } from "@/components/ui/primitives";
 export function UserActions({
   id,
   name,
+  email,
   isActive,
   role,
   canManageRoles,
@@ -18,14 +20,16 @@ export function UserActions({
 }: {
   id: string;
   name: string;
+  email: string;
   isActive: boolean;
   role: string;
   canManageRoles: boolean;
   isSelf: boolean;
 }) {
+  const router = useRouter();
   const { fire, pending } = useAction();
   const [resetUrl, setResetUrl] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<"disable" | "logout" | "role" | null>(null);
+  const [dialog, setDialog] = useState<"disable" | "logout" | "role" | "delete" | null>(null);
   const [reason, setReason] = useState("");
   const [newRole, setNewRole] = useState(role);
   const post = <T,>(body: Record<string, unknown>, msg?: string) => fire<T>(String(body.action), `/api/admin/users/${id}`, { body }, msg);
@@ -59,6 +63,11 @@ export function UserActions({
       {canManageRoles && !isSelf && (
         <Button variant="outline" size="sm" onClick={() => setDialog("role")}>
           <ShieldCheck /> Change role
+        </Button>
+      )}
+      {!isSelf && role === "USER" && (
+        <Button variant="danger" size="sm" onClick={() => setDialog("delete")}>
+          <Trash2 /> Delete user
         </Button>
       )}
 
@@ -98,6 +107,22 @@ export function UserActions({
           <Textarea id="disable-reason" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} />
         </Field>
       </ConfirmDialog>
+      <ConfirmDialog
+        open={dialog === "delete"}
+        onClose={() => setDialog(null)}
+        title={`Permanently delete ${name}?`}
+        description="This deletes the account and all of its answers, competition entries and notifications. Leaderboards are recalculated. This cannot be undone — disable the account instead if you may need it later."
+        confirmLabel="Delete user"
+        loadingLabel="Deleting…"
+        confirmText={email}
+        onConfirm={async () => {
+          const res = await fire(`delete`, `/api/admin/users/${id}`, { method: "DELETE", body: { confirmEmail: email } }, "User deleted.");
+          if (res) {
+            setDialog(null);
+            router.push("/admin/users");
+          }
+        }}
+      />
       <ConfirmDialog
         open={dialog === "logout"}
         onClose={() => setDialog(null)}

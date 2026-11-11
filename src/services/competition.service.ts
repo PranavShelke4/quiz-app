@@ -3,10 +3,11 @@ import { getCompetitionClock, computeEndDate, computeStartDate, getDayWindow, ty
 import { connectDb } from "@/lib/db/mongoose";
 import { AppError, isDuplicateKeyError } from "@/lib/errors";
 import { TIE_BREAKER_LABELS, type TieBreaker } from "@/lib/leaderboard/ranking";
+import { antiCheatOf, type AntiCheatSettings } from "@/lib/quiz/anticheat-config";
 import type { RequestMeta } from "@/lib/security/request-meta";
 import { now } from "@/lib/time/clock";
 import { localDateInZone, zonedTimeToUtc } from "@/lib/time/zoned";
-import type { CompetitionInput } from "@/lib/validation/quiz";
+import type { CompetitionInput, RuleSection } from "@/lib/validation/quiz";
 import { AnswerCorrection } from "@/models/AnswerCorrection";
 import { Competition, type ICompetition } from "@/models/Competition";
 import { CompetitionParticipant } from "@/models/CompetitionParticipant";
@@ -20,15 +21,39 @@ export type CompetitionDoc = ICompetition;
 /** Statuses visible to participants. DRAFT and ARCHIVED never are. */
 const PUBLISHED_STATUSES = ["SCHEDULED", "ACTIVE", "COMPLETED"] as const;
 
-export const DEFAULT_RULES = [
-  "One question is released every day at 9:00 AM (competition time zone) and closes at 6:00 PM the same day.",
-  "Every question has exactly four options. Choose one and submit.",
-  "You get one submission per day. Answers can't be changed once submitted.",
-  "A day you don't answer is recorded as missed and scores 0 points.",
-  "Correct answers, scores and ranks stay hidden until the competition ends and results are revealed.",
-  "Using multiple accounts, automation or sharing answers is prohibited. Suspicious activity is reviewed by admins before any action.",
-  "If a question is found to be wrong, admins may issue a documented correction; affected scores are recalculated for everyone.",
+export const DEFAULT_RULE_SECTIONS: RuleSection[] = [
+  {
+    title: "Daily questions",
+    description: "How each day's question works.",
+    rules: [
+      "One question is released every day and closes the same day (competition time zone).",
+      "Choose the correct option and submit. If a question says \"select all that apply\", choose every correct option — all of them are needed to score.",
+      "You get one submission per day. Answers can't be changed once submitted.",
+      "A day you don't answer is recorded as missed and scores 0 points.",
+    ],
+  },
+  {
+    title: "Results",
+    description: "What you can see, and when.",
+    rules: ["Correct answers, scores and ranks stay hidden until the competition ends and results are revealed."],
+  },
+  {
+    title: "Fair play",
+    description: "Keeping the competition fair for everyone.",
+    rules: [
+      "Using multiple accounts, automation or sharing answers is prohibited. Suspicious activity is reviewed by admins before any action.",
+      "If a question is found to be wrong, admins may issue a documented correction; affected scores are recalculated for everyone.",
+    ],
+  },
 ];
+export const DEFAULT_RULES = DEFAULT_RULE_SECTIONS.flatMap((s) => s.rules);
+
+/** Sections to show: custom sections, else the legacy flat list as one section, else the defaults. */
+export function ruleSectionsOf(comp: Pick<ICompetition, "rules"> & { ruleSections?: RuleSection[] | null }): RuleSection[] {
+  if (comp.ruleSections?.length) return comp.ruleSections.map((s) => ({ title: s.title, description: s.description ?? "", rules: [...s.rules] }));
+  if (comp.rules.length) return [{ title: "Rules", description: "", rules: [...comp.rules] }];
+  return DEFAULT_RULE_SECTIONS;
+}
 
 export function clockFor(
   comp: Pick<ICompetition, "startDate" | "durationDays" | "timezone"> & Partial<Pick<ICompetition, "dailyStartTime" | "dailyEndTime">>,
@@ -67,6 +92,8 @@ export interface PublicCompetitionDTO {
   todayOpensAt: string | null;
   todayClosesAt: string | null;
   rules: string[];
+  ruleSections: RuleSection[];
+  antiCheat: AntiCheatSettings;
   tieBreakers: { key: TieBreaker; label: string }[];
   scoring: { pointsPerCorrectAnswer: number; negativeMarking: boolean; negativePoints: number };
   leaderboardRevealed: boolean;
@@ -93,7 +120,9 @@ export function toPublicCompetition(comp: ICompetition, at: Date = now()): Publi
     daysRemaining: clock.daysRemaining,
     todayOpensAt: clock.today?.opensAt.toISOString() ?? null,
     todayClosesAt: clock.today?.closesAt.toISOString() ?? null,
-    rules: comp.rules.length ? comp.rules : DEFAULT_RULES,
+    rules: ruleSectionsOf(comp).flatMap((s) => s.rules),
+    ruleSections: ruleSectionsOf(comp),
+    antiCheat: antiCheatOf(comp),
     tieBreakers: comp.tieBreakers.map((key) => ({ key, label: TIE_BREAKER_LABELS[key] })),
     scoring: { ...comp.scoring },
     leaderboardRevealed: isLeaderboardRevealed(comp, at),
@@ -277,7 +306,10 @@ function buildDoc(input: CompetitionInput) {
     leaderboardRevealDate: revealDate,
     registrationOpen: input.registrationOpen,
     registrationClosesAt,
-    rules: input.rules,
+    // Sections are the source of truth when sent; the flat list mirrors them for older readers.
+    rules: input.ruleSections?.length ? input.ruleSections.flatMap((s) => s.rules) : input.rules,
+    ruleSections: input.ruleSections ?? [],
+    ...(input.antiCheat ? { antiCheat: input.antiCheat } : {}),
   };
 }
 
@@ -296,7 +328,7 @@ export async function createCompetition(input: CompetitionInput, actor: Actor): 
 }
 
 /** Fields that may change after the competition has started. */
-const SAFE_AFTER_START = new Set(["name", "category", "description", "rules", "leaderboardRevealMode", "leaderboardRevealLocalDateTime", "registrationOpen", "registrationCloseLocalDate"]);
+const SAFE_AFTER_START = new Set(["name", "category", "description", "rules", "ruleSections", "antiCheat", "leaderboardRevealMode", "leaderboardRevealLocalDateTime", "registrationOpen", "registrationCloseLocalDate"]);
 
 export async function updateCompetition(id: string, input: Partial<CompetitionInput>, actor: Actor): Promise<ICompetition> {
   await connectDb();
@@ -336,7 +368,10 @@ export async function updateCompetition(id: string, input: Partial<CompetitionIn
         : comp.registrationClosesAt
           ? localDateInZone(comp.registrationClosesAt, comp.timezone)
           : "",
-    rules: input.rules ?? comp.rules,
+    // Sending sections (even an empty list) replaces the legacy flat list too.
+    rules: input.ruleSections !== undefined ? input.ruleSections.flatMap((s) => s.rules) : (input.rules ?? comp.rules),
+    ruleSections: input.ruleSections ?? comp.ruleSections ?? [],
+    antiCheat: input.antiCheat ?? comp.antiCheat ?? undefined,
   };
   const doc = buildDoc(merged);
 
@@ -480,6 +515,8 @@ export function toAdminCompetition(comp: ICompetition, at: Date = now()) {
     registrationOpen: comp.registrationOpen,
     registrationCloseLocalDate: comp.registrationClosesAt ? localDateInZone(comp.registrationClosesAt, comp.timezone) : "",
     rules: comp.rules,
+    ruleSections: (comp.ruleSections ?? []).map((s) => ({ title: s.title, description: s.description ?? "", rules: [...s.rules] })),
+    antiCheat: antiCheatOf(comp),
     finalizedAt: comp.finalizedAt?.toISOString() ?? null,
     publishedAt: comp.publishedAt?.toISOString() ?? null,
   };

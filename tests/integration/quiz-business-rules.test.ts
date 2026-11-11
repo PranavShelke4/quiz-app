@@ -41,7 +41,7 @@ describe("Business rules", () => {
     setNow(dayMiddle(comp, 3));
     const res = await call(submitRoute, { cookie, body: { optionId: wrongFor(3) } });
     expect(res.status).toBe(200);
-    expect(Object.keys(res.json.data).sort()).toEqual(["dayNumber", "selectedOptionId", "status", "submittedAt"]);
+    expect(Object.keys(res.json.data).sort()).toEqual(["dayNumber", "selectedOptionId", "selectedOptionIds", "status", "submittedAt"]);
     const stored = await DailyAnswer.findOne({ userId: user._id, dayNumber: 3 }).lean();
     expect(stored).toMatchObject({ status: "ANSWERED", isCorrect: false, score: 0 });
   });

@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import { connectDb } from "@/lib/db/mongoose";
+import { correctIdsOf, selectedIdsOf } from "@/lib/quiz/scoring";
 import { escapeRegex } from "@/lib/validation/common";
 import { DailyAnswer, type IDailyAnswer } from "@/models/DailyAnswer";
 import { Question } from "@/models/Question";
@@ -38,7 +39,7 @@ export async function buildAnswerFilter(f: AnswerFilters) {
 async function hydrate(answers: IDailyAnswer[]) {
   const [users, questions, comps] = await Promise.all([
     User.find({ _id: { $in: answers.map((a) => a.userId) } }).select("name email").lean(),
-    Question.find({ _id: { $in: answers.map((a) => a.questionId).filter(Boolean) } }).select("questionText options correctOptionId").lean(),
+    Question.find({ _id: { $in: answers.map((a) => a.questionId).filter(Boolean) } }).select("questionText options correctOptionId correctOptionIds").lean(),
     Competition.find({ _id: { $in: [...new Set(answers.map((a) => String(a.competitionId)))] } }).select("name").lean(),
   ]);
   const uMap = new Map(users.map((u) => [String(u._id), u]));
@@ -55,8 +56,8 @@ async function hydrate(answers: IDailyAnswer[]) {
       competition: cMap.get(String(a.competitionId))?.name ?? "",
       dayNumber: a.dayNumber,
       question: q?.questionText ?? "",
-      selectedAnswer: optionText(a.selectedOptionId),
-      correctAnswer: optionText(q?.correctOptionId),
+      selectedAnswer: selectedIdsOf(a).map((id) => optionText(id)).join(" | "),
+      correctAnswer: q ? correctIdsOf(q).map((id) => optionText(id)).join(" | ") : "",
       isCorrect: a.isCorrect,
       score: a.score,
       status: a.status,

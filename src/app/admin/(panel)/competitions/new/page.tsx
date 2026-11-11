@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ANTICHEAT_DEFAULTS } from "@/lib/quiz/anticheat-config";
 import { CompetitionForm } from "@/components/admin/competition-form";
 import { PageHeader } from "@/components/ui/primitives";
 import { requireAdmin } from "@/lib/auth/dal";
@@ -39,7 +40,8 @@ export default async function NewCompetitionPage() {
           leaderboardRevealLocalDateTime: "",
           registrationOpen: true,
           registrationCloseLocalDate: "",
-          rules: [],
+          ruleSections: [],
+          antiCheat: ANTICHEAT_DEFAULTS,
         }}
       />
     </>

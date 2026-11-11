@@ -8,12 +8,15 @@ import { Pagination, TBody, TD, TH, THead, TR, Table } from "@/components/ui/tab
 import { requireAdmin } from "@/lib/auth/dal";
 import { formatDateTime } from "@/lib/utils";
 import { FLAG_STATUSES } from "@/models/SuspicionFlag";
-import { listFlags } from "@/services/anticheat.service";
+import { describeFlagDetails, listFlags } from "@/services/anticheat.service";
 
 export const metadata: Metadata = { title: "Review flags" };
 
 const DESCRIPTIONS: Record<string, string> = {
   MULTIPLE_ACCOUNTS: "Several accounts answered from the same IP on the same day.",
+  SAME_WRONG_ANSWERS: "Repeatedly chose the same rare wrong answer as another participant — a sign of sharing answers. Popular wrong answers are ignored.",
+  FAST_ANSWER: "A correct answer was submitted faster than the question and its options can be read.",
+  ATTEMPT_LOCKED: "A timed attempt was ended because the participant left the page, reloaded, exited fullscreen or opened it on another device.",
   RAPID_SUBMISSIONS: "A cluster of accounts on one IP submitted within minutes of each other.",
   SUSPICIOUS_ACTIVITY: "Sessions from an unusual number of distinct IPs in 24 hours.",
 };
@@ -27,7 +30,7 @@ export default async function FlagsPage({ searchParams }: PageProps<"/admin/flag
 
   return (
     <>
-      <PageHeader title="Review flags" description="Anti-cheat heuristics raised by the daily job." />
+      <PageHeader title="Review flags" description="Anti-cheat signals raised automatically — during timed attempts and by the daily job." />
       <Alert tone="info">Flags are signals, not verdicts. Nothing is banned or rescored automatically — an admin decides.</Alert>
       <FilterBar action="/admin/flags">
         <FilterSelect name="status" label="Status" value={status ?? "all"} options={[{ value: "OPEN", label: "Open" }, { value: "CONFIRMED", label: "Confirmed" }, { value: "DISMISSED", label: "Dismissed" }, { value: "all", label: "All" }]} />
@@ -38,15 +41,18 @@ export default async function FlagsPage({ searchParams }: PageProps<"/admin/flag
         <Card>
           <Table>
             <THead>
-              <tr><TH>User</TH><TH>Signal</TH><TH>Day</TH><TH className="hidden md:table-cell">Details</TH><TH>Status</TH><TH className="hidden lg:table-cell">Raised</TH><TH /></tr>
+              <tr><TH>User</TH><TH>Signal</TH><TH>Day</TH><TH>Status</TH><TH className="hidden lg:table-cell">Raised</TH><TH /></tr>
             </THead>
             <TBody>
               {items.map((f) => (
                 <TR key={f.id}>
                   <TD><Link href={`/admin/users/${f.userId}`} className="font-medium hover:underline">{f.userName}</Link><p className="text-xs text-muted-foreground">{f.userEmail}</p></TD>
-                  <TD><Badge tone="warning">{f.type}</Badge><p className="mt-1 max-w-xs text-xs text-muted-foreground">{DESCRIPTIONS[f.type]}</p></TD>
+                  <TD>
+                    <Badge tone="warning">{f.type.replace(/_/g, " ")}</Badge>
+                    <p className="mt-1 max-w-sm text-xs font-medium">{describeFlagDetails(f.type, (f.details ?? {}) as Record<string, unknown>)}</p>
+                    <p className="mt-0.5 max-w-sm text-xs text-muted-foreground">{DESCRIPTIONS[f.type]}</p>
+                  </TD>
                   <TD className="tabular-nums">{f.dayNumber ?? "—"}</TD>
-                  <TD className="hidden md:table-cell"><code className="text-[11px] text-muted-foreground">{JSON.stringify(f.details)}</code></TD>
                   <TD><Badge tone={f.status === "OPEN" ? "warning" : f.status === "CONFIRMED" ? "danger" : "neutral"}>{f.status}</Badge>{f.reviewNote && <p className="mt-1 text-xs text-muted-foreground">{f.reviewNote}</p>}</TD>
                   <TD className="hidden text-xs lg:table-cell">{formatDateTime(f.createdAt)}</TD>
                   <TD>{f.status === "OPEN" && <FlagReview id={f.id} />}</TD>

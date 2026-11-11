@@ -1,4 +1,5 @@
-import { Schema, model, models, type Model, type Types } from "mongoose";
+import { Schema, type Model, type Types } from "mongoose";
+import { defineModel } from "@/lib/db/model";
 
 /**
  * Aggregate per (competition, user). Always derivable from DailyAnswer records via
@@ -65,5 +66,4 @@ ParticipantSchema.index({ competitionId: 1, team: 1 });
 ParticipantSchema.index({ userId: 1, joinedAt: -1 });
 
 export const CompetitionParticipant: Model<ICompetitionParticipant> =
-  (models.CompetitionParticipant as Model<ICompetitionParticipant>) ??
-  model<ICompetitionParticipant>("CompetitionParticipant", ParticipantSchema);
+  defineModel<ICompetitionParticipant>("CompetitionParticipant", ParticipantSchema);

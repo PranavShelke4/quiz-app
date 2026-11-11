@@ -1,4 +1,6 @@
-import { Schema, model, models, type Model, type Types } from "mongoose";
+import { Schema, type Model, type Types } from "mongoose";
+import { defineModel } from "@/lib/db/model";
+import type { AntiCheatSettings } from "@/lib/quiz/anticheat-config";
 import { TIE_BREAKERS, DEFAULT_TIE_BREAKERS, type TieBreaker } from "@/lib/leaderboard/ranking";
 
 export const COMPETITION_STATUSES = ["DRAFT", "SCHEDULED", "ACTIVE", "COMPLETED", "ARCHIVED"] as const;
@@ -47,6 +49,10 @@ export interface ICompetition {
   leaderboardRevealOverridden: boolean;
 
   rules: string[];
+  /** Titled groups of rules. When empty, `rules` (or the defaults) is shown as one group. */
+  ruleSections: { title: string; description: string; rules: string[] }[];
+  /** Missing on competitions created before anti-cheat existed → treated as off (see antiCheatOf). */
+  antiCheat?: AntiCheatSettings | null;
 
   publishedAt: Date | null;
   activatedAt: Date | null;
@@ -89,6 +95,34 @@ const CompetitionSchema = new Schema<ICompetition>(
     leaderboardRevealedAt: { type: Date, default: null },
     leaderboardRevealOverridden: { type: Boolean, default: false },
     rules: { type: [String], default: [] },
+    antiCheat: {
+      type: new Schema(
+        {
+          enabled: { type: Boolean, required: true },
+          timeLimitSeconds: { type: Number, required: true, min: 10, max: 600 },
+          shuffleOptions: { type: Boolean, required: true },
+          lockOnLeave: { type: Boolean, required: true },
+          watermark: { type: Boolean, required: true },
+          requireFullscreen: { type: Boolean, required: true },
+          flagFastAnswers: { type: Boolean, default: true },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
+    ruleSections: {
+      type: [
+        new Schema(
+          {
+            title: { type: String, required: true, trim: true, maxlength: 100 },
+            description: { type: String, default: "", trim: true, maxlength: 500 },
+            rules: { type: [String], default: [] },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
     publishedAt: { type: Date, default: null },
     activatedAt: { type: Date, default: null },
     completedAt: { type: Date, default: null },
@@ -105,4 +139,4 @@ CompetitionSchema.index({ status: 1, startDate: 1 });
 CompetitionSchema.index({ startDate: 1, endDate: 1 });
 
 export const Competition: Model<ICompetition> =
-  (models.Competition as Model<ICompetition>) ?? model<ICompetition>("Competition", CompetitionSchema);
+  defineModel<ICompetition>("Competition", CompetitionSchema);

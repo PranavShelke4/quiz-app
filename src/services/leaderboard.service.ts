@@ -4,6 +4,8 @@ import { AppError } from "@/lib/errors";
 import { rankParticipants, type Ranked, type RankableParticipant } from "@/lib/leaderboard/ranking";
 import type { RequestMeta } from "@/lib/security/request-meta";
 import { now } from "@/lib/time/clock";
+import { pickForParticipant } from "@/lib/quiz/pools";
+import { correctIdsOf, selectedIdsOf } from "@/lib/quiz/scoring";
 import { escapeRegex } from "@/lib/validation/common";
 import { Competition, type ICompetition } from "@/models/Competition";
 import { CompetitionParticipant, type ICompetitionParticipant } from "@/models/CompetitionParticipant";
@@ -283,7 +285,17 @@ export async function getUserResults(userId: Types.ObjectId, at: Date = now()) {
     CompetitionParticipant.findOne({ competitionId: comp._id, userId }).lean(),
   ]);
   const answerByDay = new Map(answers.map((a) => [a.dayNumber, a]));
-  const days = questions.map((q) => {
+  // Question pools: show the version this user answered (or was assigned), one row per day.
+  const byId = new Map(questions.map((q) => [String(q._id), q]));
+  const versionsByDay = new Map<number, typeof questions>();
+  for (const q of [...questions].sort((x, y) => x.dayNumber - y.dayNumber || (x.variant ?? 1) - (y.variant ?? 1))) {
+    versionsByDay.set(q.dayNumber, [...(versionsByDay.get(q.dayNumber) ?? []), q]);
+  }
+  const perDay = [...versionsByDay.entries()].map(([dayNumber, versions]) => {
+    const a = answerByDay.get(dayNumber);
+    return (a?.questionId && byId.get(String(a.questionId))) || pickForParticipant(versions, { competitionId: String(comp._id), dayNumber, userId: String(userId) })!;
+  });
+  const days = perDay.map((q) => {
     const a = answerByDay.get(q.dayNumber);
     return {
       dayNumber: q.dayNumber,
@@ -292,8 +304,10 @@ export async function getUserResults(userId: Types.ObjectId, at: Date = now()) {
       difficulty: q.difficulty,
       options: q.options.map((o) => ({ id: o.id, text: o.text })),
       correctOptionId: q.correctOptionId,
+      correctOptionIds: correctIdsOf(q),
       explanation: q.explanation,
       selectedOptionId: a?.selectedOptionId ?? null,
+      selectedOptionIds: a ? selectedIdsOf(a) : [],
       result: !a || a.status === "MISSED" ? ("MISSED" as const) : a.isCorrect ? ("CORRECT" as const) : ("WRONG" as const),
       points: a?.score ?? 0,
       answeredAt: a?.answeredAt?.toISOString() ?? null,

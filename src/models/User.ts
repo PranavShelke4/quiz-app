@@ -1,4 +1,5 @@
-import { Schema, model, models, type Model, type Types } from "mongoose";
+import { Schema, type Model, type Types } from "mongoose";
+import { defineModel } from "@/lib/db/model";
 
 export const ROLES = ["USER", "ADMIN", "SUPER_ADMIN"] as const;
 export type Role = (typeof ROLES)[number];
@@ -51,4 +52,4 @@ UserSchema.index({ role: 1, createdAt: -1 });
 UserSchema.index({ isActive: 1 });
 UserSchema.index({ team: 1 });
 
-export const User: Model<IUser> = (models.User as Model<IUser>) ?? model<IUser>("User", UserSchema);
+export const User: Model<IUser> = defineModel<IUser>("User", UserSchema);

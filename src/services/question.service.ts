@@ -1,23 +1,25 @@
-import { Types } from "mongoose";
+import { Types, type ClientSession } from "mongoose";
 import { z } from "zod";
 import { getDayAccess, getDayWindow } from "@/lib/competition/schedule";
 import { parseCsvWithHeader } from "@/lib/csv";
 import { connectDb, withTransaction } from "@/lib/db/mongoose";
 import { AppError, isDuplicateKeyError } from "@/lib/errors";
-import { scoreAnswer } from "@/lib/quiz/scoring";
+import { correctIdsOf, scoreAnswer } from "@/lib/quiz/scoring";
 import type { RequestMeta } from "@/lib/security/request-meta";
 import { now } from "@/lib/time/clock";
 import { escapeRegex } from "@/lib/validation/common";
 import {
-  CSV_IMPORT_HEADERS,
+  CSV_REQUIRED_HEADERS,
   OPTION_IDS,
   csvQuestionRowSchema,
+  normalizeImportHeader,
   type OptionId,
   type QuestionInput,
 } from "@/lib/validation/quiz";
 import { AnswerCorrection } from "@/models/AnswerCorrection";
 import type { ICompetition } from "@/models/Competition";
 import { DailyAnswer } from "@/models/DailyAnswer";
+import { MAX_VARIANTS_PER_DAY } from "@/lib/quiz/pools";
 import { Question, type IQuestion } from "@/models/Question";
 import { recordAudit } from "@/services/audit.service";
 import { clockFor, getCompetitionById } from "@/services/competition.service";
@@ -32,9 +34,11 @@ export function toAdminQuestion(q: IQuestion) {
     id: String(q._id),
     competitionId: String(q.competitionId),
     dayNumber: q.dayNumber,
+    variant: q.variant ?? 1,
     questionText: q.questionText,
     options: q.options.map((o) => ({ id: o.id, text: o.text })),
     correctOptionId: q.correctOptionId,
+    correctOptionIds: correctIdsOf(q) as OptionId[],
     explanation: q.explanation,
     category: q.category,
     difficulty: q.difficulty,
@@ -57,6 +61,40 @@ export function isQuestionLocked(comp: ICompetition, dayNumber: number, at: Date
   return getDayAccess(comp, dayNumber, at) !== "UPCOMING";
 }
 
+/**
+ * Resolves the answer key from either `correctOptionIds` or the legacy `correctOptionId`,
+ * checks it against the options, and returns both fields ready to persist.
+ */
+function answerKey(
+  options: { id: string }[],
+  input: { correctOptionId?: OptionId; correctOptionIds?: OptionId[] },
+): { correctOptionId: OptionId; correctOptionIds: OptionId[] } {
+  const ids = (input.correctOptionIds?.length ? input.correctOptionIds : input.correctOptionId ? [input.correctOptionId] : []) as OptionId[];
+  const sorted = OPTION_IDS.filter((id) => ids.includes(id));
+  if (!sorted.length) throw new AppError("VALIDATION_ERROR", "Select at least one correct option.", { fields: { correctOptionIds: ["Select at least one correct option"] } });
+  if (!sorted.every((id) => options.some((o) => o.id === id))) {
+    throw new AppError("VALIDATION_ERROR", "Correct option must match one of the options.", { fields: { correctOptionIds: ["Must match one of the options"] } });
+  }
+  return { correctOptionId: sorted[0]!, correctOptionIds: sorted };
+}
+
+/** Next free version number for a day (question pools), enforcing the per-day limit. */
+async function nextVariant(competitionId: Types.ObjectId, dayNumber: number, session?: ClientSession): Promise<number> {
+  const versions = await Question.find({ competitionId, dayNumber }).select("variant").session(session ?? null).lean();
+  if (versions.length >= MAX_VARIANTS_PER_DAY) {
+    throw new AppError("CONFLICT", `Day ${dayNumber} already has ${MAX_VARIANTS_PER_DAY} versions (the maximum).`);
+  }
+  return versions.reduce((max, v) => Math.max(max, v.variant ?? 1), 0) + 1;
+}
+
+/** Renumbers a day's versions to 1, 2, 3… after a removal (ascending, so the unique index never clashes). */
+async function compactVariants(competitionId: Types.ObjectId, dayNumber: number, session?: ClientSession) {
+  const versions = await Question.find({ competitionId, dayNumber }).sort({ variant: 1, _id: 1 }).select("variant").session(session ?? null).lean();
+  for (const [i, v] of versions.entries()) {
+    if ((v.variant ?? 1) !== i + 1) await Question.updateOne({ _id: v._id }, { $set: { variant: i + 1 } }, { session });
+  }
+}
+
 function assertDayInRange(comp: ICompetition, dayNumber: number) {
   if (dayNumber < 1 || dayNumber > comp.durationDays) {
     throw new AppError("VALIDATION_ERROR", `Day must be between 1 and ${comp.durationDays}.`, { fields: { dayNumber: ["Out of range"] } });
@@ -77,7 +115,7 @@ export async function listQuestions(params: {
   if (params.category) filter.category = params.category;
   if (params.difficulty) filter.difficulty = params.difficulty;
   if (params.search) filter.questionText = { $regex: escapeRegex(params.search), $options: "i" };
-  const questions = await Question.find(filter).sort({ dayNumber: 1 }).lean();
+  const questions = await Question.find(filter).sort({ dayNumber: 1, variant: 1 }).lean();
   const categories = await Question.distinct("category", { competitionId: comp._id });
   return { competition: comp, questions, categories: categories.sort() };
 }
@@ -96,19 +134,23 @@ export async function createQuestion(input: QuestionInput & { status: "DRAFT" | 
   assertDayInRange(comp, input.dayNumber);
   if (isQuestionLocked(comp, input.dayNumber)) throw new AppError("QUESTION_LOCKED", "That day has already opened.");
   try {
+    // A day that already has a question gets another version (question pool).
+    const variant = await nextVariant(comp._id, input.dayNumber);
     const [q] = await Question.create([
       {
         ...input,
+        ...answerKey(input.options, input),
+        variant,
         competitionId: comp._id,
         scheduledDate: getDayWindow(comp, input.dayNumber).opensAt,
         createdBy: actor.userId,
         updatedBy: actor.userId,
       },
     ]);
-    await recordAudit({ adminId: actor.userId, action: "QUESTION_CREATED", targetType: "Question", targetId: q._id, metadata: { competitionId: String(comp._id), dayNumber: q.dayNumber }, meta: actor.meta });
+    await recordAudit({ adminId: actor.userId, action: "QUESTION_CREATED", targetType: "Question", targetId: q._id, metadata: { competitionId: String(comp._id), dayNumber: q.dayNumber, variant }, meta: actor.meta });
     return q.toObject();
   } catch (e) {
-    if (isDuplicateKeyError(e)) throw new AppError("CONFLICT", `Day ${input.dayNumber} already has a question.`);
+    if (isDuplicateKeyError(e)) throw new AppError("CONFLICT", `Another version was just added to day ${input.dayNumber}. Please try again.`);
     throw e;
   }
 }
@@ -123,17 +165,21 @@ export async function updateQuestion(id: string, input: Partial<Omit<QuestionInp
     if (isQuestionLocked(comp, input.dayNumber)) throw new AppError("QUESTION_LOCKED", "The target day has already opened.");
   }
   const options = input.options ?? q.options;
-  const correct = input.correctOptionId ?? q.correctOptionId;
-  if (!options.some((o) => o.id === correct)) throw new AppError("VALIDATION_ERROR", "Correct option must match one of the options.");
+  const keyChanged = input.correctOptionIds !== undefined || input.correctOptionId !== undefined;
+  // Re-validate the key whenever options or the key change (e.g. an option was removed).
+  const key = answerKey(options, keyChanged ? input : { correctOptionIds: correctIdsOf(q) as OptionId[] });
 
-  const $set: Record<string, unknown> = { ...input, updatedBy: actor.userId };
+  const $set: Record<string, unknown> = { ...input, ...key, updatedBy: actor.userId };
+  const moving = input.dayNumber !== undefined && input.dayNumber !== q.dayNumber;
   if (input.dayNumber !== undefined) $set.scheduledDate = getDayWindow(comp, input.dayNumber).opensAt;
+  if (moving) $set.variant = await nextVariant(comp._id, input.dayNumber!);
   try {
     await Question.updateOne({ _id: q._id }, { $set }, { runValidators: true });
   } catch (e) {
-    if (isDuplicateKeyError(e)) throw new AppError("CONFLICT", `Day ${input.dayNumber} already has a question.`);
+    if (isDuplicateKeyError(e)) throw new AppError("CONFLICT", `Another version was just added to day ${input.dayNumber}. Please try again.`);
     throw e;
   }
+  if (moving) await compactVariants(comp._id, q.dayNumber);
   await recordAudit({ adminId: actor.userId, action: "QUESTION_UPDATED", targetType: "Question", targetId: q._id, metadata: { changed: Object.keys(input) }, meta: actor.meta });
   return getQuestion(id);
 }
@@ -148,7 +194,38 @@ export async function deleteQuestion(id: string, actor: Actor) {
   }
   if (await DailyAnswer.exists({ questionId: q._id })) throw new AppError("QUESTION_LOCKED", "This question has answers.");
   await Question.deleteOne({ _id: q._id });
+  await compactVariants(comp._id, q.dayNumber);
   await recordAudit({ adminId: actor.userId, action: "QUESTION_DELETED", targetType: "Question", targetId: q._id, metadata: { dayNumber: q.dayNumber, questionText: q.questionText.slice(0, 120) }, meta: actor.meta });
+}
+
+/**
+ * Deletes several questions at once. Same rules as deleting one: draft competition,
+ * day not yet opened, no answers. All-or-nothing: if any is blocked, none is deleted.
+ */
+export async function deleteQuestions(competitionId: string, ids: string[], actor: Actor) {
+  await connectDb();
+  const comp = await getCompetitionById(competitionId);
+  if (comp.status !== "DRAFT") {
+    throw new AppError("COMPETITION_LOCKED", "Unpublish the competition before deleting questions — every day of a published competition needs a question.");
+  }
+  const unique = [...new Set(ids)];
+  const qs = await Question.find({ _id: { $in: unique }, competitionId: comp._id }).select("dayNumber").lean();
+  if (qs.length !== unique.length) throw new AppError("QUESTION_NOT_FOUND", "Some questions were not found in this competition. Refresh and try again.");
+  const locked = qs.filter((q) => isQuestionLocked(comp, q.dayNumber)).map((q) => q.dayNumber);
+  if (locked.length) throw new AppError("QUESTION_LOCKED", `Day(s) ${locked.sort((a, b) => a - b).join(", ")} have already opened.`);
+  const answered = await DailyAnswer.distinct("questionId", { questionId: { $in: qs.map((q) => q._id) } });
+  if (answered.length) throw new AppError("QUESTION_LOCKED", `${answered.length} of the selected questions have answers.`);
+  const res = await Question.deleteMany({ _id: { $in: qs.map((q) => q._id) }, competitionId: comp._id });
+  for (const day of new Set(qs.map((q) => q.dayNumber))) await compactVariants(comp._id, day);
+  await recordAudit({
+    adminId: actor.userId,
+    action: "QUESTION_DELETED",
+    targetType: "Competition",
+    targetId: comp._id,
+    metadata: { bulk: true, count: res.deletedCount, days: qs.map((q) => q.dayNumber).sort((a, b) => a - b) },
+    meta: actor.meta,
+  });
+  return { deleted: res.deletedCount ?? 0 };
 }
 
 export async function setQuestionStatus(id: string, status: "DRAFT" | "PUBLISHED", actor: Actor) {
@@ -183,7 +260,7 @@ export async function duplicateQuestion(id: string, target: { competitionId?: st
       dayNumber: target.dayNumber,
       questionText: q.questionText,
       options: q.options.map((o) => ({ id: o.id, text: o.text })),
-      correctOptionId: q.correctOptionId,
+      correctOptionIds: correctIdsOf(q) as OptionId[],
       explanation: q.explanation,
       category: q.category,
       difficulty: q.difficulty,
@@ -194,18 +271,19 @@ export async function duplicateQuestion(id: string, target: { competitionId?: st
   );
 }
 
-/** Swaps the days of two questions atomically (upcoming days only). */
+/** Swaps two days atomically — every version of each day moves together (upcoming days only). */
 export async function swapQuestionDays(firstId: string, secondId: string, actor: Actor) {
   await connectDb();
   const [a, b] = await Promise.all([getQuestion(firstId), getQuestion(secondId)]);
   if (String(a.competitionId) !== String(b.competitionId)) throw new AppError("VALIDATION_ERROR", "Questions belong to different competitions.");
+  if (a.dayNumber === b.dayNumber) throw new AppError("VALIDATION_ERROR", "Both questions are on the same day.");
   const comp = await getCompetitionById(a.competitionId);
   if (isQuestionLocked(comp, a.dayNumber) || isQuestionLocked(comp, b.dayNumber)) throw new AppError("QUESTION_LOCKED");
   await withTransaction(async (session) => {
-    // Park `a` on a temporary negative day to keep the unique index satisfied mid-swap.
-    await Question.updateOne({ _id: a._id }, { $set: { dayNumber: -a.dayNumber } }, { session });
-    await Question.updateOne({ _id: b._id }, { $set: { dayNumber: a.dayNumber, scheduledDate: getDayWindow(comp, a.dayNumber).opensAt } }, { session });
-    await Question.updateOne({ _id: a._id }, { $set: { dayNumber: b.dayNumber, scheduledDate: getDayWindow(comp, b.dayNumber).opensAt } }, { session });
+    // Park day A on a temporary negative day to keep the unique index satisfied mid-swap.
+    await Question.updateMany({ competitionId: comp._id, dayNumber: a.dayNumber }, { $set: { dayNumber: -a.dayNumber } }, { session });
+    await Question.updateMany({ competitionId: comp._id, dayNumber: b.dayNumber }, { $set: { dayNumber: a.dayNumber, scheduledDate: getDayWindow(comp, a.dayNumber).opensAt } }, { session });
+    await Question.updateMany({ competitionId: comp._id, dayNumber: -a.dayNumber }, { $set: { dayNumber: b.dayNumber, scheduledDate: getDayWindow(comp, b.dayNumber).opensAt } }, { session });
   });
   await recordAudit({ adminId: actor.userId, action: "QUESTIONS_REORDERED", targetType: "Competition", targetId: comp._id, metadata: { swapped: [a.dayNumber, b.dayNumber] }, meta: actor.meta });
 }
@@ -230,7 +308,10 @@ export interface ImportReport {
 
 export async function importQuestionsCsv(params: {
   competitionId: string;
-  csv: string;
+  /** Either raw CSV text… */
+  csv?: string;
+  /** …or rows already read from an .xlsx file in the browser, keyed by their header cells. */
+  records?: Record<string, string>[];
   dryRun: boolean;
   skipInvalid: boolean;
   publish: boolean;
@@ -241,13 +322,22 @@ export async function importQuestionsCsv(params: {
   const comp = await getCompetitionById(params.competitionId);
   if (comp.status === "COMPLETED" || comp.status === "ARCHIVED") throw new AppError("COMPETITION_LOCKED");
 
-  let parsed;
-  try {
-    parsed = parseCsvWithHeader(params.csv);
-  } catch (e) {
-    throw new AppError("VALIDATION_ERROR", `Couldn't read the CSV: ${(e as Error).message}`);
+  let raw: { headers: string[]; records: Record<string, string>[] };
+  if (params.records) {
+    raw = { headers: [...new Set(params.records.flatMap((r) => Object.keys(r)))], records: params.records };
+  } else {
+    try {
+      raw = parseCsvWithHeader(params.csv ?? "");
+    } catch (e) {
+      throw new AppError("VALIDATION_ERROR", `Couldn't read the CSV: ${(e as Error).message}`);
+    }
   }
-  const missingHeaders = CSV_IMPORT_HEADERS.filter((h) => !["category", "difficulty", "points"].includes(h) && !parsed.headers.includes(h));
+  // Accept friendly headers ("Day", "Option A", "Correct Answer"…) for both CSV and Excel.
+  const parsed = {
+    headers: raw.headers.map(normalizeImportHeader),
+    records: raw.records.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [normalizeImportHeader(k), v]))),
+  };
+  const missingHeaders = CSV_REQUIRED_HEADERS.filter((h) => !parsed.headers.includes(h));
   if (missingHeaders.length) {
     throw new AppError("VALIDATION_ERROR", `Missing required column(s): ${missingHeaders.join(", ")}`);
   }
@@ -256,9 +346,9 @@ export async function importQuestionsCsv(params: {
 
   const existing = await Question.find({ competitionId: comp._id }).select("dayNumber").lean();
   const existingDays = new Set(existing.map((q) => q.dayNumber));
-  const seenDays = new Map<number, number>();
+  const rowsPerDay = new Map<number, number>();
   const errors: ImportRowError[] = [];
-  const valid: { row: number; data: z.infer<typeof csvQuestionRowSchema> }[] = [];
+  const valid: { row: number; data: z.infer<typeof csvQuestionRowSchema>; options: { id: OptionId; text: string }[] }[] = [];
 
   parsed.records.forEach((record, index) => {
     const row = index + 1;
@@ -269,14 +359,22 @@ export async function importQuestionsCsv(params: {
     } else {
       const d = result.data;
       if (d.dayNumber > comp.durationDays) rowErrors.push(`dayNumber: must be between 1 and ${comp.durationDays}`);
-      const dupRow = seenDays.get(d.dayNumber);
-      if (dupRow) rowErrors.push(`dayNumber: day ${d.dayNumber} also appears in row ${dupRow}`);
-      if (existingDays.has(d.dayNumber) && !params.overwrite) rowErrors.push(`dayNumber: day ${d.dayNumber} already has a question`);
+      // Several rows for one day become versions of that day's question (question pool).
+      const sameDay = (rowsPerDay.get(d.dayNumber) ?? 0) + 1;
+      rowsPerDay.set(d.dayNumber, sameDay);
+      if (sameDay > MAX_VARIANTS_PER_DAY) rowErrors.push(`dayNumber: day ${d.dayNumber} has more than ${MAX_VARIANTS_PER_DAY} versions in this file`);
+      if (existingDays.has(d.dayNumber) && !params.overwrite) rowErrors.push(`dayNumber: day ${d.dayNumber} already has a question (tick "Overwrite" to replace it)`);
       if (d.dayNumber <= comp.durationDays && isQuestionLocked(comp, d.dayNumber)) rowErrors.push(`dayNumber: day ${d.dayNumber} has already opened`);
-      const texts = [d.optionA, d.optionB, d.optionC, d.optionD].map((t) => t.toLowerCase());
-      if (new Set(texts).size !== 4) rowErrors.push("options: all four options must be different");
-      seenDays.set(d.dayNumber, row);
-      if (!rowErrors.length) valid.push({ row, data: d });
+      // Options fill left to right: A and B are required, C–F optional but without gaps.
+      const raw = [d.optionA, d.optionB, d.optionC, d.optionD, d.optionE, d.optionF];
+      const lastFilled = raw.reduce((last, t, i) => (t ? i : last), -1);
+      const gap = raw.slice(0, lastFilled + 1).findIndex((t) => !t);
+      if (gap !== -1) rowErrors.push(`option${OPTION_IDS[gap]}: is empty but a later option is filled`);
+      const options = raw.slice(0, lastFilled + 1).map((text, i) => ({ id: OPTION_IDS[i]!, text }));
+      if (new Set(options.map((o) => o.text.toLowerCase())).size !== options.length) rowErrors.push("options: all options must be different");
+      const missing = d.correctOption.filter((id) => !options.some((o) => o.id === id));
+      if (missing.length) rowErrors.push(`correctOption: ${missing.join(", ")} ${missing.length === 1 ? "is not an option" : "are not options"} in this row`);
+      if (!rowErrors.length) valid.push({ row, data: d, options });
     }
     if (rowErrors.length) errors.push({ row, dayNumber: record.dayNumber ?? "", errors: rowErrors });
   });
@@ -294,32 +392,31 @@ export async function importQuestionsCsv(params: {
   if (!valid.length) return report;
 
   await withTransaction(async (session) => {
-    for (const { data } of valid) {
-      const doc = {
+    // Overwrite replaces every version of the days in the file (they're upcoming, so unanswered).
+    const days = [...new Set(valid.map((v) => v.data.dayNumber))];
+    if (params.overwrite) await Question.deleteMany({ competitionId: comp._id, dayNumber: { $in: days } }, { session });
+    const variants = new Map<number, number>();
+    const docs = valid.map(({ data, options }) => {
+      const variant = (variants.get(data.dayNumber) ?? 0) + 1;
+      variants.set(data.dayNumber, variant);
+      return {
         competitionId: comp._id,
         dayNumber: data.dayNumber,
+        variant,
         questionText: data.question,
-        options: [
-          { id: "A", text: data.optionA },
-          { id: "B", text: data.optionB },
-          { id: "C", text: data.optionC },
-          { id: "D", text: data.optionD },
-        ],
-        correctOptionId: data.correctOption,
+        options,
+        ...answerKey(options, { correctOptionIds: data.correctOption }),
         explanation: data.explanation,
         category: data.category,
         difficulty: data.difficulty,
         points: data.points,
         status: params.publish ? "PUBLISHED" : "DRAFT",
         scheduledDate: getDayWindow(comp, data.dayNumber).opensAt,
+        createdBy: params.actor.userId,
         updatedBy: params.actor.userId,
       };
-      await Question.findOneAndUpdate(
-        { competitionId: comp._id, dayNumber: data.dayNumber },
-        { $set: doc, $setOnInsert: { createdBy: params.actor.userId } },
-        { upsert: true, session, runValidators: true },
-      );
-    }
+    });
+    await Question.insertMany(docs, { session });
   });
   report.imported = valid.length;
   await recordAudit({
@@ -338,7 +435,7 @@ export async function importQuestionsCsv(params: {
 // ---------------------------------------------------------------------------
 export async function issueCorrection(
   questionId: string,
-  input: { newCorrectOptionId?: OptionId; newPoints?: number | null; reason: string },
+  input: { newCorrectOptionId?: OptionId; newCorrectOptionIds?: OptionId[]; newPoints?: number | null; reason: string },
   actor: Actor,
 ) {
   await connectDb();
@@ -347,23 +444,33 @@ export async function issueCorrection(
   if (!isQuestionLocked(comp, q.dayNumber)) {
     throw new AppError("CONFLICT", "This question hasn't opened yet — edit it directly instead of issuing a correction.");
   }
-  const newCorrect = input.newCorrectOptionId ?? q.correctOptionId;
+  const oldIds = correctIdsOf(q) as OptionId[];
+  const keyChanged = input.newCorrectOptionIds !== undefined || input.newCorrectOptionId !== undefined;
+  let newKey: { correctOptionId: OptionId; correctOptionIds: OptionId[] };
+  try {
+    newKey = keyChanged
+      ? answerKey(q.options, { correctOptionIds: input.newCorrectOptionIds, correctOptionId: input.newCorrectOptionId })
+      : { correctOptionId: q.correctOptionId, correctOptionIds: oldIds };
+  } catch {
+    throw new AppError("INVALID_OPTION");
+  }
   const newPoints = input.newPoints !== undefined ? input.newPoints : q.points;
-  if (!OPTION_IDS.includes(newCorrect)) throw new AppError("INVALID_OPTION");
-  if (newCorrect === q.correctOptionId && newPoints === q.points) throw new AppError("VALIDATION_ERROR", "The correction doesn't change anything.");
+  const sameKey = newKey.correctOptionIds.join() === [...oldIds].sort().join();
+  if (sameKey && newPoints === q.points) throw new AppError("VALIDATION_ERROR", "The correction doesn't change anything.");
 
-  const answers = await DailyAnswer.find({ questionId: q._id, status: "ANSWERED" }).select("_id userId selectedOptionId").lean();
+  const answers = await DailyAnswer.find({ questionId: q._id, status: "ANSWERED" }).select("_id userId selectedOptionId selectedOptionIds").lean();
   const affectedUsers = [...new Set(answers.map((a) => String(a.userId)))].map((id) => new Types.ObjectId(id));
 
   await withTransaction(async (session) => {
-    await Question.updateOne({ _id: q._id }, { $set: { correctOptionId: newCorrect, points: newPoints, updatedBy: actor.userId } }, { session });
+    await Question.updateOne({ _id: q._id }, { $set: { ...newKey, points: newPoints, updatedBy: actor.userId } }, { session });
     const t = now();
     if (answers.length) {
       await DailyAnswer.bulkWrite(
         answers.map((a) => {
           const { isCorrect, score } = scoreAnswer({
-            selectedOptionId: a.selectedOptionId!,
-            correctOptionId: newCorrect,
+            selectedOptionId: a.selectedOptionId,
+            selectedOptionIds: a.selectedOptionIds,
+            correctOptionIds: newKey.correctOptionIds,
             questionPoints: newPoints,
             config: comp.scoring,
           });
@@ -380,8 +487,8 @@ export async function issueCorrection(
           dayNumber: q.dayNumber,
           adminId: actor.userId,
           reason: input.reason,
-          oldValue: { correctOptionId: q.correctOptionId, points: q.points },
-          newValue: { correctOptionId: newCorrect, points: newPoints },
+          oldValue: { correctOptionId: q.correctOptionId, correctOptionIds: oldIds, points: q.points },
+          newValue: { ...newKey, points: newPoints },
           affectedAnswers: answers.length,
           affectedParticipants: affectedUsers.length,
         },
@@ -397,8 +504,8 @@ export async function issueCorrection(
         metadata: {
           reason: input.reason,
           dayNumber: q.dayNumber,
-          old: { correctOptionId: q.correctOptionId, points: q.points },
-          new: { correctOptionId: newCorrect, points: newPoints },
+          old: { correctOptionIds: oldIds, points: q.points },
+          new: { correctOptionIds: newKey.correctOptionIds, points: newPoints },
           affectedAnswers: answers.length,
         },
         meta: actor.meta,

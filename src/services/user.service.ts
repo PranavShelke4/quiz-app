@@ -1,19 +1,22 @@
 import { Types } from "mongoose";
 import { countActiveSessions, revokeAllUserSessions } from "@/lib/auth/session";
-import { connectDb } from "@/lib/db/mongoose";
+import { connectDb, withTransaction } from "@/lib/db/mongoose";
 import { AppError } from "@/lib/errors";
 import type { RequestMeta } from "@/lib/security/request-meta";
 import { now } from "@/lib/time/clock";
 import { escapeRegex } from "@/lib/validation/common";
 import { CompetitionParticipant } from "@/models/CompetitionParticipant";
 import { Competition } from "@/models/Competition";
+import { AuthToken } from "@/models/AuthToken";
 import { DailyAnswer } from "@/models/DailyAnswer";
+import { Notification } from "@/models/Notification";
 import { Session } from "@/models/Session";
 import { SuspicionFlag } from "@/models/SuspicionFlag";
 import { User, type IUser, type Role } from "@/models/User";
 import { recordAudit } from "@/services/audit.service";
 import { createPasswordResetLink } from "@/services/auth.service";
 import { isLeaderboardRevealed } from "@/services/competition.service";
+import { finalizeCompetition } from "@/services/leaderboard.service";
 
 type Actor = { userId: Types.ObjectId; role: Role; meta: Pick<RequestMeta, "ip" | "userAgent"> };
 
@@ -174,6 +177,88 @@ export async function adminCreateResetLink(id: string, actor: Actor): Promise<st
   const resetUrl = await createPasswordResetLink(user._id);
   await recordAudit({ adminId: actor.userId, action: "USER_PASSWORD_RESET_SENT", targetType: "User", targetId: user._id, meta: actor.meta });
   return resetUrl;
+}
+
+/**
+ * Removes accounts and everything tied to them (answers, competition entries, flags,
+ * notifications, sessions, tokens) in one transaction, then recomputes final rankings
+ * of affected, already-finalized competitions so nobody is left with a gap.
+ */
+async function purgeUsers(users: Pick<IUser, "_id" | "email" | "name">[], actor: Actor) {
+  const ids = users.map((u) => u._id);
+  const competitionIds = await CompetitionParticipant.distinct("competitionId", { userId: { $in: ids } });
+  const finalized = await Competition.find({ _id: { $in: competitionIds }, finalizedAt: { $ne: null } }).select("_id").lean();
+
+  for (const id of ids) await revokeAllUserSessions(id);
+  await withTransaction(async (session) => {
+    const byUser = { userId: { $in: ids } };
+    await DailyAnswer.deleteMany(byUser, { session });
+    await CompetitionParticipant.deleteMany(byUser, { session });
+    await SuspicionFlag.deleteMany(byUser, { session });
+    await Notification.deleteMany(byUser, { session });
+    await AuthToken.deleteMany(byUser, { session });
+    await Session.deleteMany(byUser, { session });
+    await User.deleteMany({ _id: { $in: ids } }, { session });
+  });
+
+  for (const c of finalized) await finalizeCompetition(c._id);
+  for (const u of users) {
+    await recordAudit({ adminId: actor.userId, action: "USER_DELETED", targetType: "User", targetId: u._id, metadata: { email: u.email, name: u.name, bulk: users.length > 1 }, meta: actor.meta });
+  }
+}
+
+/**
+ * Permanently deletes one participant account. Admin accounts must be demoted to
+ * USER first. The caller must repeat the user's email. Cannot be undone.
+ */
+export async function deleteUser(id: string, confirmEmail: string, actor: Actor) {
+  await connectDb();
+  const user = await loadTarget(id, actor);
+  if (String(user._id) === String(actor.userId)) throw new AppError("FORBIDDEN", "You can't delete your own account.");
+  if (user.role !== "USER") throw new AppError("CONFLICT", "Change this account's role to User before deleting it.");
+  if (confirmEmail.trim().toLowerCase() !== user.email.toLowerCase()) {
+    throw new AppError("VALIDATION_ERROR", "Type the user's email exactly to confirm.", { fields: { confirmEmail: ["Doesn't match"] } });
+  }
+  await purgeUsers([user], actor);
+  return { deleted: 1 };
+}
+
+/** Bulk delete. Admin accounts and the caller's own account are skipped, not deleted. */
+export async function deleteUsers(ids: string[], actor: Actor) {
+  await connectDb();
+  const unique = [...new Set(ids)].filter((id) => Types.ObjectId.isValid(id));
+  const found = await User.find({ _id: { $in: unique } }).select("_id email name role").lean();
+  const eligible = found.filter((u) => u.role === "USER" && String(u._id) !== String(actor.userId));
+  if (eligible.length) await purgeUsers(eligible, actor);
+  return { deleted: eligible.length, skipped: unique.length - eligible.length };
+}
+
+/** Admin edit of a user's basic details. */
+export async function adminUpdateUser(id: string, input: { name?: string; email?: string; team?: string }, actor: Actor) {
+  await connectDb();
+  const user = await loadTarget(id, actor);
+  const $set: Record<string, unknown> = {};
+  if (input.name !== undefined && input.name !== user.name) $set.name = input.name;
+  if (input.team !== undefined && input.team !== (user.team ?? "General")) $set.team = input.team;
+  if (input.email !== undefined && input.email.toLowerCase() !== user.email) {
+    const email = input.email.toLowerCase();
+    if (await User.exists({ email, _id: { $ne: user._id } })) {
+      throw new AppError("CONFLICT", "Another account already uses that email.", { fields: { email: ["Already in use"] } });
+    }
+    $set.email = email;
+  }
+  if (!Object.keys($set).length) return { updated: false };
+  await User.updateOne({ _id: user._id }, { $set });
+  if ($set.team !== undefined) await CompetitionParticipant.updateMany({ userId: user._id }, { $set: { team: $set.team } });
+  await recordAudit({
+    adminId: actor.userId,
+    action: "USER_UPDATED",
+    targetType: "User",
+    targetId: user._id,
+    metadata: Object.fromEntries(Object.keys($set).map((k) => [k, { from: (user as unknown as Record<string, unknown>)[k] ?? null, to: $set[k] }])),
+    meta: actor.meta,
+  });
+  return { updated: true };
 }
 
 /** SUPER_ADMIN only (enforced by route permission `admins:manage`). */

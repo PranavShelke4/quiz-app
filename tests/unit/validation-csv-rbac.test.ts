@@ -3,7 +3,8 @@ import { hasPermission } from "@/lib/auth/rbac";
 import { parseCsv, parseCsvWithHeader, toCsv } from "@/lib/csv";
 import { passwordSchema, signupSchema } from "@/lib/validation/auth";
 import { escapeRegex } from "@/lib/validation/common";
-import { createQuestionSchema, csvQuestionRowSchema, submitAnswerSchema } from "@/lib/validation/quiz";
+import { scoreAnswer, DEFAULT_SCORING } from "@/lib/quiz/scoring";
+import { createQuestionSchema, csvQuestionRowSchema, normalizeImportHeader, parseOptionIdList, submitAnswerSchema, updateCompetitionSchema, updateQuestionSchema } from "@/lib/validation/quiz";
 
 describe("answer submission validation", () => {
   it("strips client-supplied score, isCorrect, userId and status", () => {
@@ -11,9 +12,16 @@ describe("answer submission validation", () => {
     expect(parsed).toEqual({ optionId: "B" });
   });
 
-  it("rejects options outside A–D", () => {
-    expect(submitAnswerSchema.safeParse({ optionId: "E" }).success).toBe(false);
+  it("rejects options outside A–F", () => {
+    expect(submitAnswerSchema.safeParse({ optionId: "G" }).success).toBe(false);
     expect(submitAnswerSchema.safeParse({ optionId: { $ne: null } }).success).toBe(false);
+    expect(submitAnswerSchema.safeParse({}).success).toBe(false);
+  });
+
+  it("accepts several distinct options for multiple-answer questions", () => {
+    expect(submitAnswerSchema.safeParse({ optionIds: ["A", "C"] }).success).toBe(true);
+    expect(submitAnswerSchema.safeParse({ optionIds: ["A", "A"] }).success).toBe(false);
+    expect(submitAnswerSchema.safeParse({ optionIds: [] }).success).toBe(false);
   });
 });
 
@@ -44,11 +52,22 @@ describe("question validation", () => {
     ],
     correctOptionId: "B",
   };
-  it("accepts exactly four A–D options", () => {
+  it("accepts four A–D options", () => {
     expect(createQuestionSchema.safeParse(base).success).toBe(true);
   });
-  it("rejects 3 options, empty options and duplicates", () => {
-    expect(createQuestionSchema.safeParse({ ...base, options: base.options.slice(0, 3) }).success).toBe(false);
+  it("accepts 2 to 6 options and several correct answers", () => {
+    expect(createQuestionSchema.safeParse({ ...base, options: base.options.slice(0, 2) }).success).toBe(true);
+    expect(createQuestionSchema.safeParse({ ...base, options: base.options.slice(0, 3) }).success).toBe(true);
+    const six = [...base.options, { id: "E", text: "6" }, { id: "F", text: "7" }];
+    expect(createQuestionSchema.safeParse({ ...base, options: six }).success).toBe(true);
+    expect(createQuestionSchema.safeParse({ ...base, correctOptionId: undefined, correctOptionIds: ["A", "C"] }).success).toBe(true);
+  });
+  it("rejects 1 option, gaps in lettering and a missing answer key", () => {
+    expect(createQuestionSchema.safeParse({ ...base, options: base.options.slice(0, 1) }).success).toBe(false);
+    expect(createQuestionSchema.safeParse({ ...base, options: [base.options[0], base.options[2]] }).success).toBe(false);
+    expect(createQuestionSchema.safeParse({ ...base, correctOptionId: undefined }).success).toBe(false);
+  });
+  it("rejects empty options and duplicates", () => {
     expect(createQuestionSchema.safeParse({ ...base, options: [...base.options.slice(0, 3), { id: "D", text: " " }] }).success).toBe(false);
     expect(createQuestionSchema.safeParse({ ...base, options: [...base.options.slice(0, 3), { id: "D", text: "3" }] }).success).toBe(false);
   });
@@ -79,9 +98,50 @@ describe("CSV", () => {
 
   it("validates import rows", () => {
     const ok = csvQuestionRowSchema.safeParse({ dayNumber: "3", question: "Capital of France?", optionA: "Paris", optionB: "Rome", optionC: "Berlin", optionD: "Madrid", correctOption: "a", difficulty: "easy" });
-    expect(ok.success && ok.data.correctOption).toBe("A");
-    const bad = csvQuestionRowSchema.safeParse({ dayNumber: "x", question: "", optionA: "", optionB: "b", optionC: "c", optionD: "d", correctOption: "E" });
+    expect(ok.success && ok.data.correctOption).toEqual(["A"]);
+    const bad = csvQuestionRowSchema.safeParse({ dayNumber: "x", question: "", optionA: "", optionB: "b", optionC: "c", optionD: "d", correctOption: "G" });
     expect(bad.success).toBe(false);
+  });
+
+  it("accepts two-option rows and several correct answers", () => {
+    const tf = csvQuestionRowSchema.safeParse({ dayNumber: "2", question: "The Sun is a star.", optionA: "True", optionB: "False", correctOption: "A" });
+    expect(tf.success && tf.data.optionC).toBe("");
+    const multi = csvQuestionRowSchema.safeParse({ dayNumber: "3", question: "Which are in Europe?", optionA: "Spain", optionB: "Brazil", optionC: "Poland", correctOption: "a;c" });
+    expect(multi.success && multi.data.correctOption).toEqual(["A", "C"]);
+  });
+
+  it("maps friendly spreadsheet headers to column names", () => {
+    expect(["Day", "Day Number", "Question", "Option A", "option_f", "Correct Answer", "Answer", "Score", "Level"].map(normalizeImportHeader)).toEqual([
+      "dayNumber", "dayNumber", "question", "optionA", "optionF", "correctOption", "correctOption", "points", "difficulty",
+    ]);
+    expect(normalizeImportHeader("Notes")).toBe("Notes");
+  });
+
+  it("parses answer-key lists", () => {
+    expect(parseOptionIdList("A")).toEqual(["A"]);
+    expect(parseOptionIdList("a, c")).toEqual(["A", "C"]);
+    expect(parseOptionIdList("B|D")).toEqual(["B", "D"]);
+    expect(parseOptionIdList("AC")).toEqual(["A", "C"]);
+  });
+});
+
+describe("multiple-answer scoring", () => {
+  const config = DEFAULT_SCORING;
+  it("is correct only when the selection matches the correct set exactly", () => {
+    expect(scoreAnswer({ selectedOptionIds: ["C", "A"], correctOptionIds: ["A", "C"], questionPoints: 3, config })).toEqual({ isCorrect: true, score: 3 });
+    expect(scoreAnswer({ selectedOptionIds: ["A"], correctOptionIds: ["A", "C"], config }).isCorrect).toBe(false);
+    expect(scoreAnswer({ selectedOptionIds: ["A", "B", "C"], correctOptionIds: ["A", "C"], config }).isCorrect).toBe(false);
+  });
+  it("still supports the legacy single-answer fields", () => {
+    expect(scoreAnswer({ selectedOptionId: "B", correctOptionId: "B", config }).isCorrect).toBe(true);
+    expect(scoreAnswer({ selectedOptionId: "B", correctOptionIds: ["B"], config }).isCorrect).toBe(true);
+  });
+});
+
+describe("partial updates", () => {
+  it("don't inject defaults for omitted fields (would reset points, explanation, rules…)", () => {
+    expect(updateQuestionSchema.parse({ questionText: "Hello there" })).toEqual({ questionText: "Hello there" });
+    expect(updateCompetitionSchema.parse({ name: "Renamed" })).toEqual({ name: "Renamed" });
   });
 });
 
