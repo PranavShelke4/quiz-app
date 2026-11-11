@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Copy, Download, Eye, FileQuestion, Lock, Pencil, Plus, Rocket, Trash2, Upload, Wrench, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, CopyPlus, Download, Eye, FileQuestion, Lock, Pencil, Plus, Rocket, Trash2, Upload, Wrench, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -11,12 +11,15 @@ import { Alert, Badge, Card, Checkbox, EmptyState, Field, Input, Select, Textare
 import { TBody, TD, TH, THead, TR, Table } from "@/components/ui/table";
 import { ApiClientError, api } from "@/lib/api/client";
 import { toCsv } from "@/lib/csv";
+import { cn } from "@/lib/utils";
 import { readXlsx } from "@/lib/question-xlsx";
 import type { AdminQuestionDTO } from "@/services/question.service";
 
 type OptionId = "A" | "B" | "C" | "D" | "E" | "F";
 const IDS: OptionId[] = ["A", "B", "C", "D", "E", "F"];
 const MIN_OPTIONS = 2;
+/** Mirrors MAX_VARIANTS_PER_DAY on the server. */
+const MAX_VERSIONS = 10;
 const MAX_OPTIONS = IDS.length;
 const keyOf = (q: AdminQuestionDTO) => (q.correctOptionIds?.length ? q.correctOptionIds : [q.correctOptionId]) as OptionId[];
 
@@ -59,11 +62,17 @@ function emptyDraft(day: number): Draft {
 export function QuestionManager({ comp, questions }: { comp: CompInfo; questions: AdminQuestionDTO[] }) {
   const params = useSearchParams();
   const { pending, fire } = useAction();
-  const byDay = new Map(questions.map((q) => [q.dayNumber, q]));
-  const freeDays = Array.from({ length: comp.durationDays }, (_, i) => i + 1).filter((d) => !byDay.has(d) && d > comp.lockedThroughDay);
+  // Question pools: a day can hold several versions; each participant gets one of them.
+  const byDay = new Map<number, AdminQuestionDTO[]>();
+  for (const q of [...questions].sort((a, b) => a.dayNumber - b.dayNumber || a.variant - b.variant)) byDay.set(q.dayNumber, [...(byDay.get(q.dayNumber) ?? []), q]);
+  const allDays = Array.from({ length: comp.durationDays }, (_, i) => i + 1);
+  const freeDays = allDays.filter((d) => !byDay.has(d) && d > comp.lockedThroughDay);
+  /** Upcoming days that can take a (new version of a) question. */
+  const openDays = allDays.filter((d) => d > comp.lockedThroughDay && (byDay.get(d)?.length ?? 0) < MAX_VERSIONS);
+  const versionCounts = new Map([...byDay].map(([d, v]) => [d, v.length]));
   // Deep links from the dashboard quick actions (?new=1 / ?import=1) seed the initial state.
   const [editor, setEditor] = useState<{ id?: string; draft: Draft } | null>(() =>
-    params.get("new") === "1" && freeDays[0] ? { draft: emptyDraft(freeDays[0]) } : null,
+    params.get("new") === "1" && (freeDays[0] ?? openDays[0]) ? { draft: emptyDraft((freeDays[0] ?? openDays[0])!) } : null,
   );
   const [preview, setPreview] = useState<AdminQuestionDTO | null>(null);
   const [toDelete, setToDelete] = useState<AdminQuestionDTO | null>(null);
@@ -98,7 +107,8 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">
-          {questions.length} of {comp.durationDays} days have a question · {questions.filter((q) => q.status === "PUBLISHED").length} published
+          {byDay.size} of {comp.durationDays} days have a question
+          {questions.length > byDay.size && ` · ${questions.length} versions in total`} · {questions.filter((q) => q.status === "PUBLISHED").length} published
         </p>
         {!readOnly && (
           <div className="flex flex-wrap gap-2">
@@ -115,7 +125,7 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
             <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
               <Upload /> Import CSV / Excel
             </Button>
-            <Button size="sm" disabled={!freeDays.length} onClick={() => setEditor({ draft: emptyDraft(freeDays[0]!) })}>
+            <Button size="sm" disabled={!openDays.length} onClick={() => setEditor({ draft: emptyDraft((freeDays[0] ?? openDays[0])!) })}>
               <Plus /> Add question
             </Button>
           </div>
@@ -162,9 +172,9 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
               </tr>
             </THead>
             <TBody>
-              {Array.from({ length: comp.durationDays }, (_, i) => i + 1).map((day) => {
-                const q = byDay.get(day);
-                if (!q) {
+              {allDays.map((day) => {
+                const versions = byDay.get(day) ?? [];
+                if (!versions.length) {
                   return (
                     <TR key={`empty-${day}`}>
                       {comp.status === "DRAFT" && <TD />}
@@ -183,14 +193,18 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
                   );
                 }
                 const locked = isLocked(day);
-                return (
-                  <TR key={q.id} className={selected.has(q.id) ? "bg-primary-soft/40" : undefined}>
+                const pooled = versions.length > 1;
+                return versions.map((q, vi) => (
+                  <TR key={q.id} className={cn(selected.has(q.id) && "bg-primary-soft/40", vi > 0 && "border-t-0")}>
                     {comp.status === "DRAFT" && (
                       <TD>
                         {canDelete(q) && <Checkbox aria-label={`Select day ${day}`} checked={selected.has(q.id)} onChange={() => toggleOne(q.id)} />}
                       </TD>
                     )}
-                    <TD className="tabular-nums font-medium">{day}</TD>
+                    <TD className="tabular-nums font-medium">
+                      {vi === 0 ? day : <span className="sr-only">{day}</span>}
+                      {pooled && <span className="ml-1 rounded bg-muted px-1 text-[10px] font-semibold text-muted-foreground" title={`Version ${q.variant} of ${versions.length}`}>v{q.variant}</span>}
+                    </TD>
                     <TD className="max-w-md">
                       <p className="line-clamp-2 text-sm">{q.questionText}</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
@@ -219,8 +233,12 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
                           ) : null
                         ) : (
                           <>
-                            <Button variant="ghost" size="icon" aria-label={`Move day ${day} earlier`} disabled={day === 1 || isLocked(day - 1)} onClick={() => swap(q, byDay.get(day - 1))}><ArrowUp /></Button>
-                            <Button variant="ghost" size="icon" aria-label={`Move day ${day} later`} disabled={day === comp.durationDays} onClick={() => swap(q, byDay.get(day + 1))}><ArrowDown /></Button>
+                            {vi === 0 && (
+                              <>
+                                <Button variant="ghost" size="icon" aria-label={`Move day ${day} earlier`} title="Swap with the previous day (all versions)" disabled={day === 1 || isLocked(day - 1)} onClick={() => swap(q, byDay.get(day - 1)?.[0])}><ArrowUp /></Button>
+                                <Button variant="ghost" size="icon" aria-label={`Move day ${day} later`} title="Swap with the next day (all versions)" disabled={day === comp.durationDays} onClick={() => swap(q, byDay.get(day + 1)?.[0])}><ArrowDown /></Button>
+                              </>
+                            )}
                             <Button variant="ghost" size="icon" aria-label={`Edit day ${day}`} onClick={() => setEditor({ id: q.id, draft: { dayNumber: q.dayNumber, questionText: q.questionText, explanation: q.explanation, category: q.category, points: q.points, options: q.options as Draft["options"], correctOptionIds: keyOf(q), difficulty: q.difficulty as Draft["difficulty"], status: q.status as Draft["status"] } })}><Pencil /></Button>
                             {q.status === "DRAFT" ? (
                               <Button variant="ghost" size="icon" aria-label={`Publish day ${day}`} title="Publish" onClick={() => fire(`pub-${q.id}`, `/api/admin/questions/${q.id}`, { body: { action: "publish" } }, "Question published.")}><Rocket /></Button>
@@ -234,20 +252,23 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
                             )}
                           </>
                         )}
-                        {!readOnly && freeDays.length > 0 && (
+                        {!readOnly && openDays.length > 0 && (
                           <Button variant="ghost" size="icon" aria-label={`Duplicate day ${day}`} title="Duplicate" onClick={() => setDupFor(q)}><Copy /></Button>
+                        )}
+                        {!locked && vi === versions.length - 1 && versions.length < MAX_VERSIONS && (
+                          <Button variant="ghost" size="icon" aria-label={`Add another version of day ${day}`} title="Add another version (question pool)" onClick={() => setEditor({ draft: emptyDraft(day) })}><CopyPlus /></Button>
                         )}
                       </div>
                     </TD>
                   </TR>
-                );
+                ));
               })}
             </TBody>
           </Table>
         </Card>
       )}
 
-      {editor && <QuestionEditor comp={comp} editor={editor} freeDays={freeDays} onClose={() => setEditor(null)} />}
+      {editor && <QuestionEditor comp={comp} editor={editor} openDays={openDays} versionCounts={versionCounts} onClose={() => setEditor(null)} />}
 
       <Dialog open={!!preview} onClose={() => setPreview(null)} title={`Preview — Day ${preview?.dayNumber}`} description="Exactly what participants see. The correct answer and explanation are hidden.">
         {preview && (
@@ -300,18 +321,31 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
 
       {correcting && <CorrectionDialog q={correcting} onClose={() => setCorrecting(null)} />}
       {importOpen && <ImportDialog comp={comp} onClose={() => setImportOpen(false)} />}
-      {dupFor && <DuplicateDialog q={dupFor} freeDays={freeDays} onClose={() => setDupFor(null)} />}
+      {dupFor && <DuplicateDialog q={dupFor} freeDays={openDays} onClose={() => setDupFor(null)} />}
     </div>
   );
 }
 
-function QuestionEditor({ comp, editor, freeDays, onClose }: { comp: CompInfo; editor: { id?: string; draft: Draft }; freeDays: number[]; onClose: () => void }) {
+function QuestionEditor({
+  comp,
+  editor,
+  openDays,
+  versionCounts,
+  onClose,
+}: {
+  comp: CompInfo;
+  editor: { id?: string; draft: Draft };
+  openDays: number[];
+  versionCounts: Map<number, number>;
+  onClose: () => void;
+}) {
   const router = useRouter();
   const [d, setD] = useState<Draft>(editor.draft);
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const days = editor.id ? [...new Set([editor.draft.dayNumber, ...freeDays])].sort((a, b) => a - b) : freeDays;
+  const days = editor.id ? [...new Set([editor.draft.dayNumber, ...openDays])].sort((a, b) => a - b) : openDays;
+  const existing = (day: number) => (versionCounts.get(day) ?? 0) - (editor.id && day === editor.draft.dayNumber ? 1 : 0);
 
   const setOptions = (options: Draft["options"], correctOptionIds: OptionId[]) => setD({ ...d, options, correctOptionIds });
   const toggleCorrect = (id: OptionId) =>
@@ -367,9 +401,19 @@ function QuestionEditor({ comp, editor, freeDays, onClose }: { comp: CompInfo; e
       <div className="space-y-4">
         {formError && <Alert tone="danger">{formError}</Alert>}
         <div className="grid gap-4 sm:grid-cols-3">
-          <Field id="q-day" label="Day" error={errors.dayNumber}>
+          <Field
+            id="q-day"
+            label="Day"
+            error={errors.dayNumber}
+            hint={existing(d.dayNumber) > 0 ? `Adds version ${existing(d.dayNumber) + 1} — each participant gets one version. Keep versions similar in difficulty and points.` : undefined}
+          >
             <Select id="q-day" value={d.dayNumber} onChange={(e) => setD({ ...d, dayNumber: Number(e.target.value) })}>
-              {days.map((n) => <option key={n} value={n}>Day {n}</option>)}
+              {days.map((n) => (
+                <option key={n} value={n}>
+                  Day {n}
+                  {existing(n) > 0 ? ` (has ${existing(n)} version${existing(n) === 1 ? "" : "s"})` : ""}
+                </option>
+              ))}
             </Select>
           </Field>
           <Field id="q-diff" label="Difficulty">
