@@ -22,6 +22,17 @@ export type Difficulty = (typeof DIFFICULTIES)[number];
 export const MAX_DURATION_DAYS = 90;
 
 /**
+ * For PATCH schemas: Zod 4's .partial() still applies .default() values, so an update that
+ * omits a field would silently reset it. Strip defaults first so omitted fields stay omitted.
+ */
+function withoutDefaults<T extends z.ZodRawShape>(schema: z.ZodObject<T>) {
+  const shape = Object.fromEntries(
+    Object.entries(schema.shape).map(([k, v]) => [k, v instanceof z.ZodDefault ? v.unwrap() : v]),
+  ) as { [K in keyof T]: T[K] extends z.ZodDefault<infer I> ? I : T[K] };
+  return z.object(shape);
+}
+
+/**
  * Answer submission. Deliberately strict: unknown keys such as `score`,
  * `isCorrect` or `userId` are stripped and never reach business logic.
  */
@@ -48,6 +59,14 @@ const scoringSchema = z
     path: ["negativePoints"],
     message: "Negative points must be 0 when negative marking is off",
   });
+
+/** A titled group of rules shown on /rules, e.g. "Scoring" with its own short intro. */
+export const ruleSectionSchema = z.object({
+  title: z.string().trim().min(1, "Section title is required").max(100),
+  description: z.string().trim().max(500).default(""),
+  rules: z.array(z.string().trim().min(1, "Rule text is required").max(500)).max(30),
+});
+export type RuleSection = z.infer<typeof ruleSectionSchema>;
 
 export const competitionBaseSchema = z.object({
   name: z.string().trim().min(3).max(100),
@@ -83,11 +102,13 @@ export const competitionBaseSchema = z.object({
     .or(z.literal("")),
   registrationOpen: z.boolean(),
   registrationCloseLocalDate: localDateSchema.optional().or(z.literal("")),
+  /** Legacy flat list; kept in sync with ruleSections (flattened) when sections are sent. */
   rules: z.array(z.string().trim().min(1).max(500)).max(30).default([]),
+  ruleSections: z.array(ruleSectionSchema).max(15).optional(),
 });
 
 export const createCompetitionSchema = competitionBaseSchema;
-export const updateCompetitionSchema = competitionBaseSchema.partial();
+export const updateCompetitionSchema = withoutDefaults(competitionBaseSchema).partial();
 export type CompetitionInput = z.infer<typeof competitionBaseSchema>;
 
 const optionTextSchema = z.string().trim().min(1, "Option text is required").max(300);
@@ -121,7 +142,7 @@ export const createQuestionSchema = questionBaseSchema
     path: ["correctOptionIds"],
     message: "Select at least one correct option",
   });
-export const updateQuestionSchema = questionBaseSchema.omit({ competitionId: true }).partial();
+export const updateQuestionSchema = withoutDefaults(questionBaseSchema.omit({ competitionId: true })).partial();
 export type QuestionInput = z.infer<typeof questionBaseSchema>;
 
 export const correctionSchema = z

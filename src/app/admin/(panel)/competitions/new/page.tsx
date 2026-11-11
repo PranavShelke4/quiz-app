@@ -39,7 +39,7 @@ export default async function NewCompetitionPage() {
           leaderboardRevealLocalDateTime: "",
           registrationOpen: true,
           registrationCloseLocalDate: "",
-          rules: [],
+          ruleSections: [],
         }}
       />
     </>

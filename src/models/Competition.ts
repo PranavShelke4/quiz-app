@@ -47,6 +47,8 @@ export interface ICompetition {
   leaderboardRevealOverridden: boolean;
 
   rules: string[];
+  /** Titled groups of rules. When empty, `rules` (or the defaults) is shown as one group. */
+  ruleSections: { title: string; description: string; rules: string[] }[];
 
   publishedAt: Date | null;
   activatedAt: Date | null;
@@ -89,6 +91,19 @@ const CompetitionSchema = new Schema<ICompetition>(
     leaderboardRevealedAt: { type: Date, default: null },
     leaderboardRevealOverridden: { type: Boolean, default: false },
     rules: { type: [String], default: [] },
+    ruleSections: {
+      type: [
+        new Schema(
+          {
+            title: { type: String, required: true, trim: true, maxlength: 100 },
+            description: { type: String, default: "", trim: true, maxlength: 500 },
+            rules: { type: [String], default: [] },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
     publishedAt: { type: Date, default: null },
     activatedAt: { type: Date, default: null },
     completedAt: { type: Date, default: null },

@@ -545,9 +545,13 @@ interface ImportReport {
 
 const TEMPLATE = [
   "dayNumber,question,optionA,optionB,optionC,optionD,optionE,optionF,correctOption,category,difficulty,points,explanation",
+  // Points by difficulty: EASY = 1, MEDIUM = 2, HARD = 3.
   "1,What is the capital of France?,Paris,Rome,Berlin,Madrid,,,A,Geography,EASY,1,Paris has been France's capital since 508 AD.",
-  "2,The Sun is a star.,True,False,,,,,A,Science,EASY,1,",
-  "3,Which of these countries are in Europe?,Spain,Brazil,Poland,Kenya,,,A;C,Geography,MEDIUM,3,Select all that apply.",
+  "2,The Sun is a star.,True,False,,,,,A,Science,EASY,1,The Sun is a G-type main-sequence star.",
+  "3,Which planet is known as the Red Planet?,Venus,Mars,Jupiter,Saturn,,,B,Science,MEDIUM,2,Iron oxide on its surface makes Mars look red.",
+  "4,Which of these countries are in Europe?,Spain,Brazil,Poland,Kenya,,,A;C,Geography,MEDIUM,2,Select all that apply.",
+  "5,Who wrote the play Hamlet?,Charles Dickens,William Shakespeare,Jane Austen,Mark Twain,,,B,Literature,HARD,3,Shakespeare wrote Hamlet around 1600.",
+  "6,Which of these numbers are prime?,2,4,7,9,11,15,A;C;E,Math,HARD,3,Select all that apply.",
   "",
 ].join("\n");
 

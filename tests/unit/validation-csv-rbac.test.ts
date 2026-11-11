@@ -4,7 +4,7 @@ import { parseCsv, parseCsvWithHeader, toCsv } from "@/lib/csv";
 import { passwordSchema, signupSchema } from "@/lib/validation/auth";
 import { escapeRegex } from "@/lib/validation/common";
 import { scoreAnswer, DEFAULT_SCORING } from "@/lib/quiz/scoring";
-import { createQuestionSchema, csvQuestionRowSchema, parseOptionIdList, submitAnswerSchema } from "@/lib/validation/quiz";
+import { createQuestionSchema, csvQuestionRowSchema, parseOptionIdList, submitAnswerSchema, updateCompetitionSchema, updateQuestionSchema } from "@/lib/validation/quiz";
 
 describe("answer submission validation", () => {
   it("strips client-supplied score, isCorrect, userId and status", () => {
@@ -128,6 +128,13 @@ describe("multiple-answer scoring", () => {
   it("still supports the legacy single-answer fields", () => {
     expect(scoreAnswer({ selectedOptionId: "B", correctOptionId: "B", config }).isCorrect).toBe(true);
     expect(scoreAnswer({ selectedOptionId: "B", correctOptionIds: ["B"], config }).isCorrect).toBe(true);
+  });
+});
+
+describe("partial updates", () => {
+  it("don't inject defaults for omitted fields (would reset points, explanation, rules…)", () => {
+    expect(updateQuestionSchema.parse({ questionText: "Hello there" })).toEqual({ questionText: "Hello there" });
+    expect(updateCompetitionSchema.parse({ name: "Renamed" })).toEqual({ name: "Renamed" });
   });
 });
 

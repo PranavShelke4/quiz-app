@@ -34,7 +34,7 @@ export default async function QuizPage() {
         {c.category && (
           <div className="flex justify-center">
             <Badge tone={c.category === "All" ? "neutral" : "primary"}>
-              {c.category === "All" ? "All Teams" : `${c.category} Team`}
+              {c.category === "All" ? "All Tracks" : `${c.category} Track`}
             </Badge>
           </div>
         )}
@@ -70,7 +70,7 @@ export default async function QuizPage() {
             <p className="text-sm font-medium text-primary">{c.name}</p>
             {c.category && (
               <Badge tone={c.category === "All" ? "neutral" : "primary"}>
-                {c.category === "All" ? "All Teams" : `${c.category} Team`}
+                {c.category === "All" ? "All Tracks" : `${c.category} Track`}
               </Badge>
             )}
           </div>

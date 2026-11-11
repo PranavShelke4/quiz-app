@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, Field, Input, Select } from "@/components/ui/primitives";
 import { ApiClientError, api } from "@/lib/api/client";
-import { COMPANY_TEAMS } from "@/lib/teams";
+import { trackOptions } from "@/lib/teams";
 import { PASSWORD_RULES } from "@/lib/validation/auth";
 
 export function ProfileForms({ name, avatar, team = "General" }: { name: string; avatar: string; team?: string }) {
@@ -48,9 +48,9 @@ export function ProfileForms({ name, avatar, team = "General" }: { name: string;
             <Field id="name" label="Display name" error={errors.name} hint="Shown on the final leaderboard.">
               <Input id="name" name="name" defaultValue={name} required maxLength={60} autoComplete="name" />
             </Field>
-            <Field id="team" label="Team / Department" error={errors.team} hint="Your team for team-based competitions and leaderboards.">
+            <Field id="team" label="Track" error={errors.team} hint="Your track for track-based competitions and leaderboards.">
               <Select id="team" name="team" defaultValue={team}>
-                {COMPANY_TEAMS.filter((t) => t !== "All").map((t) => (
+                {trackOptions(team).map((t) => (
                   <option key={t} value={t}>{t}</option>
                 ))}
               </Select>

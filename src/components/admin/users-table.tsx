@@ -11,11 +11,9 @@ import { ConfirmDialog, Dialog } from "@/components/ui/dialog";
 import { Alert, Avatar, Badge, Checkbox, Field, Input, Select } from "@/components/ui/primitives";
 import { TBody, TD, TH, THead, TR, Table } from "@/components/ui/table";
 import { ApiClientError, api } from "@/lib/api/client";
-import { COMPANY_TEAMS } from "@/lib/teams";
+import { trackOptions } from "@/lib/teams";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import type { AdminUserDTO } from "@/services/user.service";
-
-const TEAMS = COMPANY_TEAMS.filter((t) => t !== "All");
 
 export function UsersTable({ users, currentUserId, isSuper }: { users: AdminUserDTO[]; currentUserId: string; isSuper: boolean }) {
   const { fire } = useAction();
@@ -163,18 +161,18 @@ function EditUserDialog({ user, onClose }: { user: AdminUserDTO; onClose: () => 
   const router = useRouter();
   const [name, setName] = useState(user.name);
   const [email, setEmail] = useState(user.email);
-  const [team, setTeam] = useState(user.team || "General");
+  const [team, setTeam] = useState(user.team || "");
   const [errors, setErrors] = useState<Record<string, string[]>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const teams = TEAMS.includes(team as (typeof TEAMS)[number]) ? TEAMS : [...TEAMS, team];
+  const teams = trackOptions(user.team);
 
   async function save() {
     setBusy(true);
     setErrors({});
     setFormError(null);
     try {
-      await api(`/api/admin/users/${user.id}`, { method: "PATCH", body: { name, email, team } });
+      await api(`/api/admin/users/${user.id}`, { method: "PATCH", body: { name, email, ...(team ? { team } : {}) } });
       toast.success("User updated.");
       router.refresh();
       onClose();
@@ -208,8 +206,9 @@ function EditUserDialog({ user, onClose }: { user: AdminUserDTO; onClose: () => 
         <Field id="u-email" label="Email" hint="The user signs in with this address." error={errors.email}>
           <Input id="u-email" type="email" value={email} maxLength={254} onChange={(e) => setEmail(e.target.value)} />
         </Field>
-        <Field id="u-team" label="Team" error={errors.team}>
+        <Field id="u-team" label="Track" error={errors.team}>
           <Select id="u-team" value={team} onChange={(e) => setTeam(e.target.value)}>
+            {!team && <option value="" disabled>Select a track</option>}
             {teams.map((t) => <option key={t} value={t}>{t}</option>)}
           </Select>
         </Field>

@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Alert, Checkbox, Field, Input, Select } from "@/components/ui/primitives";
 import { ApiClientError, api } from "@/lib/api/client";
-import { COMPANY_TEAMS } from "@/lib/teams";
+import { TRACKS } from "@/lib/teams";
 import { safeNextPath } from "@/lib/utils";
 import { PASSWORD_RULES } from "@/lib/validation/auth";
 
@@ -103,9 +103,10 @@ export function SignupForm() {
       <Field id="name" label="Name" error={errors.name} hint="Shown on the final leaderboard.">
         <Input {...fieldProps("name", errors)} autoComplete="name" required maxLength={60} />
       </Field>
-      <Field id="team" label="Team / Department" error={errors.team} hint="Select your team or department.">
-        <Select id="team" name="team" defaultValue="Engineering">
-          {COMPANY_TEAMS.filter((t) => t !== "All").map((team) => (
+      <Field id="team" label="Track" error={errors.team} hint="Select your track.">
+        <Select id="team" name="team" defaultValue="" required>
+          <option value="" disabled>Select your track</option>
+          {TRACKS.map((team) => (
             <option key={team} value={team}>{team}</option>
           ))}
         </Select>

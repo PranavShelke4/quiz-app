@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, Lock, Plus, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -26,7 +26,20 @@ export interface CompetitionFormValues {
   leaderboardRevealLocalDateTime: string;
   registrationOpen: boolean;
   registrationCloseLocalDate: string;
+  ruleSections: RuleSectionValue[];
+}
+
+export interface RuleSectionValue {
+  title: string;
+  description: string;
   rules: string[];
+}
+
+/** Drops blank rules and fully empty sections before saving. */
+function cleanSections(sections: RuleSectionValue[]): RuleSectionValue[] {
+  return sections
+    .map((s) => ({ title: s.title.trim(), description: s.description.trim(), rules: s.rules.map((r) => r.trim()).filter(Boolean) }))
+    .filter((s) => s.title || s.description || s.rules.length);
 }
 
 export function CompetitionForm({
@@ -58,17 +71,25 @@ export function CompetitionForm({
     setBusy(true);
     setErrors({});
     setFormError(null);
+    const ruleSections = cleanSections(v.ruleSections);
+    const untitled = ruleSections.findIndex((s) => !s.title);
+    if (untitled !== -1) {
+      setBusy(false);
+      setErrors({ ruleSections: [`Section ${untitled + 1} needs a title.`] });
+      setFormError("Please fix the highlighted fields.");
+      return;
+    }
     const body = started
       ? {
           name: v.name,
           description: v.description,
-          rules: v.rules.filter((r) => r.trim()),
+          ruleSections,
           leaderboardRevealMode: v.leaderboardRevealMode,
           leaderboardRevealLocalDateTime: v.leaderboardRevealLocalDateTime,
           registrationOpen: v.registrationOpen,
           registrationCloseLocalDate: v.registrationCloseLocalDate,
         }
-      : { ...v, rules: v.rules.filter((r) => r.trim()) };
+      : { ...v, ruleSections };
     try {
       const res = await api<{ id: string }>(mode === "create" ? "/api/admin/competitions" : `/api/admin/competitions/${id}`, {
         method: mode === "create" ? "POST" : "PATCH",
@@ -108,7 +129,7 @@ export function CompetitionForm({
           <Field id="name" label="Name" error={errors.name} className="md:col-span-2">
             <Input id="name" value={v.name} onChange={(e) => set("name", e.target.value)} required maxLength={100} placeholder="October Daily Challenge" />
           </Field>
-          <Field id="category" label="Target Team / Category" error={errors.category} hint="Enter a team name or category, or leave as 'All' for company-wide participation.">
+          <Field id="category" label="Target Track / Category" error={errors.category} hint="Enter a track or category, or leave as 'All' for company-wide participation.">
             <Input id="category" value={v.category} onChange={(e) => set("category", e.target.value)} disabled={started} maxLength={60} placeholder="e.g. Engineering, Marketing, All" />
           </Field>
           <Field id="description" label="Description" error={errors.description} className="md:col-span-2">
@@ -211,23 +232,7 @@ export function CompetitionForm({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader><CardTitle>Rules</CardTitle></CardHeader>
-        <CardContent className="space-y-2">
-          <p className="text-sm text-muted-foreground">Shown on /rules. Leave empty to use the default rules.</p>
-          {v.rules.map((r, i) => (
-            <div key={i} className="flex gap-2">
-              <Input aria-label={`Rule ${i + 1}`} value={r} maxLength={500} onChange={(e) => set("rules", v.rules.map((x, j) => (j === i ? e.target.value : x)))} />
-              <Button variant="ghost" size="icon" aria-label={`Remove rule ${i + 1}`} onClick={() => set("rules", v.rules.filter((_, j) => j !== i))}>
-                <Trash2 />
-              </Button>
-            </div>
-          ))}
-          <Button variant="outline" size="sm" onClick={() => set("rules", [...v.rules, ""])}>
-            <Plus /> Add rule
-          </Button>
-        </CardContent>
-      </Card>
+      <RulesEditor sections={v.ruleSections} onChange={(sections) => set("ruleSections", sections)} error={errors.ruleSections} />
 
       <div className="flex justify-end gap-2">
         <Button type="submit" loading={busy} loadingText={mode === "create" ? "Creating…" : "Saving…"}>
@@ -235,5 +240,68 @@ export function CompetitionForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+function RulesEditor({ sections, onChange, error }: { sections: RuleSectionValue[]; onChange: (s: RuleSectionValue[]) => void; error?: string[] }) {
+  const update = (i: number, patch: Partial<RuleSectionValue>) => onChange(sections.map((s, j) => (j === i ? { ...s, ...patch } : s)));
+  const move = (i: number, by: -1 | 1) => {
+    const next = [...sections];
+    const [item] = next.splice(i, 1);
+    next.splice(i + by, 0, item!);
+    onChange(next);
+  };
+
+  return (
+    <Card>
+      <CardHeader><CardTitle>Rules</CardTitle></CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Shown on /rules. Group rules into sections, each with a title and a short description. Leave empty to use the default rules.
+        </p>
+        {error && <p className="text-xs text-danger">{error[0]}</p>}
+        {sections.map((section, i) => (
+          <div key={i} className="space-y-3 rounded-xl border p-3 sm:p-4">
+            <div className="flex items-start gap-2">
+              <span className="mt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Section {i + 1}</span>
+              <div className="ml-auto flex gap-0.5">
+                <Button variant="ghost" size="icon" aria-label={`Move section ${i + 1} up`} disabled={i === 0} onClick={() => move(i, -1)}><ArrowUp /></Button>
+                <Button variant="ghost" size="icon" aria-label={`Move section ${i + 1} down`} disabled={i === sections.length - 1} onClick={() => move(i, 1)}><ArrowDown /></Button>
+                <Button variant="ghost" size="icon" aria-label={`Remove section ${i + 1}`} onClick={() => onChange(sections.filter((_, j) => j !== i))}><Trash2 /></Button>
+              </div>
+            </div>
+            <Field id={`rs-title-${i}`} label="Section title">
+              <Input id={`rs-title-${i}`} value={section.title} maxLength={100} placeholder="e.g. Scoring" onChange={(e) => update(i, { title: e.target.value })} />
+            </Field>
+            <Field id={`rs-desc-${i}`} label="Short description" hint="Optional. Shown under the title.">
+              <Textarea id={`rs-desc-${i}`} value={section.description} maxLength={500} rows={2} className="min-h-0" onChange={(e) => update(i, { description: e.target.value })} />
+            </Field>
+            <div className="space-y-2">
+              <span className="text-sm font-medium">Rules in this section</span>
+              {section.rules.map((r, k) => (
+                <div key={k} className="flex items-center gap-2">
+                  <span className="w-5 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{k + 1}.</span>
+                  <Input
+                    aria-label={`Section ${i + 1}, rule ${k + 1}`}
+                    value={r}
+                    maxLength={500}
+                    onChange={(e) => update(i, { rules: section.rules.map((x, j) => (j === k ? e.target.value : x)) })}
+                  />
+                  <Button variant="ghost" size="icon" aria-label={`Remove rule ${k + 1} of section ${i + 1}`} onClick={() => update(i, { rules: section.rules.filter((_, j) => j !== k) })}>
+                    <X />
+                  </Button>
+                </div>
+              ))}
+              <Button variant="outline" size="sm" disabled={section.rules.length >= 30} onClick={() => update(i, { rules: [...section.rules, ""] })}>
+                <Plus /> Add rule
+              </Button>
+            </div>
+          </div>
+        ))}
+        <Button variant="outline" size="sm" disabled={sections.length >= 15} onClick={() => onChange([...sections, { title: "", description: "", rules: [""] }])}>
+          <Plus /> Add section
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

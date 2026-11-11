@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/primitives";
 import { formatDateTime } from "@/lib/utils";
-import { DEFAULT_RULES, getCurrentCompetition, toPublicCompetition } from "@/services/competition.service";
+import { DEFAULT_RULE_SECTIONS, getCurrentCompetition, toPublicCompetition } from "@/services/competition.service";
 
 export const metadata: Metadata = {
   title: "Competition rules",
@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 export default async function RulesPage() {
   const comp = await getCurrentCompetition().catch(() => null);
   const c = comp ? toPublicCompetition(comp) : null;
-  const rules = c?.rules ?? DEFAULT_RULES;
+  const sections = c?.ruleSections ?? DEFAULT_RULE_SECTIONS;
 
   return (
     <article className="mx-auto max-w-3xl space-y-8 px-4 py-12 sm:px-6">
@@ -26,18 +26,23 @@ export default async function RulesPage() {
         )}
       </header>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>The rules</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ol className="list-decimal space-y-3 pl-5 text-sm leading-relaxed">
-            {rules.map((r) => (
-              <li key={r}>{r}</li>
-            ))}
-          </ol>
-        </CardContent>
-      </Card>
+      {sections.map((section, i) => (
+        <Card key={`${i}-${section.title}`}>
+          <CardHeader className="space-y-1">
+            <CardTitle>{section.title}</CardTitle>
+            {section.description && <p className="text-sm text-muted-foreground">{section.description}</p>}
+          </CardHeader>
+          {section.rules.length > 0 && (
+            <CardContent>
+              <ol className="list-decimal space-y-3 pl-5 text-sm leading-relaxed">
+                {section.rules.map((r, k) => (
+                  <li key={k}>{r}</li>
+                ))}
+              </ol>
+            </CardContent>
+          )}
+        </Card>
+      ))}
 
       <Card>
         <CardHeader>

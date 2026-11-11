@@ -60,7 +60,7 @@ export default async function LeaderboardPage({ searchParams }: PageProps<"/lead
     <div className="space-y-8">
       <PageHeader
         eyebrow={`🏆 ${c.name}`}
-        title={teamFilter ? `${teamFilter} Team Leaderboard` : "Final Results"}
+        title={teamFilter ? `${teamFilter} Track Leaderboard` : "Final Results"}
         description={
           teamFilter
             ? `${total} participant${total === 1 ? "" : "s"} in ${teamFilter} · ${c.durationDays} days`
@@ -115,7 +115,7 @@ export default async function LeaderboardPage({ searchParams }: PageProps<"/lead
                       : "bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground"
                   )}
                 >
-                  {t === "All" ? "All Teams" : t}
+                  {t === "All" ? "All Tracks" : t}
                 </Link>
               );
             })}
@@ -125,7 +125,7 @@ export default async function LeaderboardPage({ searchParams }: PageProps<"/lead
           <CardContent>
             <EmptyState
               title={teamFilter ? `No participants in ${teamFilter}` : "No participants"}
-              description={teamFilter ? `Nobody from the ${teamFilter} team joined this competition.` : "Nobody took part in this competition."}
+              description={teamFilter ? `Nobody from the ${teamFilter} track joined this competition.` : "Nobody took part in this competition."}
             />
           </CardContent>
         ) : (
@@ -135,7 +135,7 @@ export default async function LeaderboardPage({ searchParams }: PageProps<"/lead
                 <tr>
                   <TH className="w-20">Rank</TH>
                   <TH>Participant</TH>
-                  <TH>Team</TH>
+                  <TH>Track</TH>
                   <TH className="text-right">Score</TH>
                   <TH className="hidden text-right sm:table-cell">Correct</TH>
                   <TH className="hidden text-right sm:table-cell">Wrong</TH>
@@ -200,7 +200,7 @@ export default async function LeaderboardPage({ searchParams }: PageProps<"/lead
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <CardTitle className="flex items-center gap-2">
-                <Building2 className="size-5 text-primary" aria-hidden /> Company Team Standings
+                <Building2 className="size-5 text-primary" aria-hidden /> Track Standings
               </CardTitle>
               <span className="text-xs text-muted-foreground">Ranked by average score</span>
             </div>
@@ -209,7 +209,7 @@ export default async function LeaderboardPage({ searchParams }: PageProps<"/lead
             <THead>
               <tr>
                 <TH className="w-16">Rank</TH>
-                <TH>Team</TH>
+                <TH>Track</TH>
                 <TH className="text-right">Participants</TH>
                 <TH className="text-right">Avg Score</TH>
                 <TH className="text-right">Total Points</TH>
@@ -236,7 +236,7 @@ export default async function LeaderboardPage({ searchParams }: PageProps<"/lead
                       href={teamFilter === ts.team ? href() : href(ts.team)}
                       className="text-xs font-medium text-primary hover:underline"
                     >
-                      {teamFilter === ts.team ? "View all" : "View team"}
+                      {teamFilter === ts.team ? "View all" : "View track"}
                     </Link>
                   </TD>
                 </TR>

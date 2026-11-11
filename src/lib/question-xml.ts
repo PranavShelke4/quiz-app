@@ -173,7 +173,8 @@ export function parseQuestionsXml(xml: string, freeDays: number[]): XmlParseResu
 }
 
 export const XML_TEMPLATE = `<?xml version="1.0" encoding="UTF-8"?>
-<!-- day is optional: questions without one go to the next free days. -->
+<!-- day is optional: questions without one go to the next free days.
+     Points by difficulty: EASY = 1, MEDIUM = 2, HARD = 3. -->
 <questions>
   <question day="1" category="Geography" difficulty="EASY" points="1">
     <text>What is the capital of France?</text>
@@ -188,12 +189,35 @@ export const XML_TEMPLATE = `<?xml version="1.0" encoding="UTF-8"?>
     <option correct="true">True</option>
     <option>False</option>
   </question>
-  <question day="3" category="Geography" difficulty="MEDIUM" points="3">
+  <question day="3" category="Science" difficulty="MEDIUM" points="2">
+    <text>Which planet is known as the Red Planet?</text>
+    <option>Venus</option>
+    <option correct="true">Mars</option>
+    <option>Jupiter</option>
+    <option>Saturn</option>
+  </question>
+  <question day="4" category="Geography" difficulty="MEDIUM" points="2">
     <text>Which of these countries are in Europe? (select all that apply)</text>
     <option correct="true">Spain</option>
     <option>Brazil</option>
     <option correct="true">Poland</option>
     <option>Kenya</option>
+  </question>
+  <question day="5" category="Literature" difficulty="HARD" points="3">
+    <text>Who wrote the play Hamlet?</text>
+    <option>Charles Dickens</option>
+    <option correct="true">William Shakespeare</option>
+    <option>Jane Austen</option>
+    <option>Mark Twain</option>
+  </question>
+  <question day="6" category="Math" difficulty="HARD" points="3">
+    <text>Which of these numbers are prime? (select all that apply)</text>
+    <option correct="true">2</option>
+    <option>4</option>
+    <option correct="true">7</option>
+    <option>9</option>
+    <option correct="true">11</option>
+    <option>15</option>
   </question>
 </questions>
 `;
