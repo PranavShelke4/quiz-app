@@ -17,6 +17,8 @@ export interface AntiCheatSettings {
   watermark: boolean;
   /** Ask for fullscreen on Start where the browser supports it; leaving it counts as leaving the page. */
   requireFullscreen: boolean;
+  /** Flag correct answers given faster than the question can be read. */
+  flagFastAnswers: boolean;
 }
 
 export const ANTICHEAT_DEFAULTS: AntiCheatSettings = {
@@ -28,9 +30,22 @@ export const ANTICHEAT_DEFAULTS: AntiCheatSettings = {
   // Off by default: iPhones can't go fullscreen in the browser, and on Android the back
   // gesture leaves fullscreen easily. When on, it's best-effort and only where supported.
   requireFullscreen: false,
+  flagFastAnswers: true,
 };
 
 export const ANTICHEAT_OFF: AntiCheatSettings = { ...ANTICHEAT_DEFAULTS, enabled: false };
+
+/**
+ * "Too fast" threshold: the time needed to read the question and its options at about
+ * twice normal reading speed (~30 characters/second), never less than 2 seconds.
+ * A correct answer faster than this suggests the answer was known before the question was seen.
+ */
+export const FAST_ANSWER_CHARS_PER_SECOND = 30;
+export const FAST_ANSWER_FLOOR_MS = 2_000;
+export function minimumPlausibleAnswerMs(q: { questionText: string; options: { text: string }[] }): number {
+  const chars = q.questionText.trim().length + q.options.reduce((n, o) => n + o.text.trim().length, 0);
+  return Math.max(FAST_ANSWER_FLOOR_MS, Math.round((chars / FAST_ANSWER_CHARS_PER_SECOND) * 1000));
+}
 
 export const MIN_TIME_LIMIT_SECONDS = 10;
 export const MAX_TIME_LIMIT_SECONDS = 600;

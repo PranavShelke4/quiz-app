@@ -317,6 +317,7 @@ function AntiCheatCard({ value, onChange, error }: { value: AntiCheatSettings; o
     { key: "lockOnLeave", label: "Lock on leave", hint: "Switching app/tab, locking the phone, reloading or opening the quiz on a second device ends the attempt as missed and raises a review flag." },
     { key: "shuffleOptions", label: "Shuffle options", hint: "Each participant sees the options in a different order, so sharing a letter is useless." },
     { key: "watermark", label: "Watermark & no copy", hint: "Faint name/email watermark over the question; copy, right-click and long-press are blocked." },
+    { key: "flagFastAnswers", label: "Flag too-fast answers", hint: "Flags correct answers submitted faster than the question and options can be read (at least 2 s). Never changes the score." },
     { key: "requireFullscreen", label: "Fullscreen (where supported)", hint: "Asks for fullscreen on Start; leaving it counts as leaving. iPhones don't support it and are never penalised for that." },
   ];
   return (

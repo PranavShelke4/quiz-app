@@ -5,7 +5,7 @@ import { GET as questionForDayRoute } from "@/app/api/questions/[day]/route";
 import { POST as eventRoute } from "@/app/api/quiz/attempt/event/route";
 import { POST as startRoute } from "@/app/api/quiz/attempt/start/route";
 import { POST as submitRoute } from "@/app/api/quiz/submit/route";
-import { ANTICHEAT_DEFAULTS, type AntiCheatSettings } from "@/lib/quiz/anticheat-config";
+import { ANTICHEAT_DEFAULTS, minimumPlausibleAnswerMs, type AntiCheatSettings } from "@/lib/quiz/anticheat-config";
 import { Competition, type ICompetition } from "@/models/Competition";
 import { DailyAnswer } from "@/models/DailyAnswer";
 import { Question } from "@/models/Question";
@@ -137,6 +137,47 @@ describe("Anti-cheat: timed attempts", () => {
       orders.add(res.json.data.question.options.map((o: { text: string }) => o.text).join("|"));
     }
     expect(orders.size).toBeGreaterThan(1); // 8 random orders of 4 options are virtually never all identical
+  });
+
+  it("flags a correct answer given faster than the question can be read — but not a slow one or a fast wrong one", async () => {
+    const comp = await timedCompetition({ shuffleOptions: false });
+    const q = (await Question.findOne({ competitionId: comp._id, dayNumber: 1 }).lean())!;
+    const minimum = minimumPlausibleAnswerMs(q);
+    const t0 = dayMiddle(comp, 1);
+
+    const fast = await player(comp);
+    setNow(t0);
+    await call(startRoute, { cookie: fast.cookie, body: {} });
+    setNow(new Date(t0.getTime() + 800));
+    await call(submitRoute, { cookie: fast.cookie, body: { optionId: correctFor(1) } });
+    const flag = await SuspicionFlag.findOne({ userId: fast.user._id, type: "FAST_ANSWER" }).lean();
+    expect(flag?.details).toEqual({ responseMs: 800, minimumMs: minimum });
+    expect(await DailyAnswer.findOne({ userId: fast.user._id }).lean()).toMatchObject({ isCorrect: true, score: 1 }); // score untouched
+
+    const slow = await player(comp);
+    setNow(t0);
+    await call(startRoute, { cookie: slow.cookie, body: {} });
+    setNow(new Date(t0.getTime() + minimum + 500));
+    await call(submitRoute, { cookie: slow.cookie, body: { optionId: correctFor(1) } });
+    expect(await SuspicionFlag.exists({ userId: slow.user._id })).toBeFalsy();
+
+    const guess = await player(comp);
+    setNow(t0);
+    await call(startRoute, { cookie: guess.cookie, body: {} });
+    setNow(new Date(t0.getTime() + 500));
+    await call(submitRoute, { cookie: guess.cookie, body: { optionId: correctFor(1) === "A" ? "B" : "A" } });
+    expect(await SuspicionFlag.exists({ userId: guess.user._id })).toBeFalsy();
+  });
+
+  it("doesn't flag fast answers when the setting is off", async () => {
+    const comp = await timedCompetition({ shuffleOptions: false, flagFastAnswers: false });
+    const { user, cookie } = await player(comp);
+    const t0 = dayMiddle(comp, 1);
+    setNow(t0);
+    await call(startRoute, { cookie, body: {} });
+    setNow(new Date(t0.getTime() + 300));
+    await call(submitRoute, { cookie, body: { optionId: correctFor(1) } });
+    expect(await SuspicionFlag.exists({ userId: user._id })).toBeFalsy();
   });
 
   it("lets an admin turn anti-cheat on for a running competition", async () => {

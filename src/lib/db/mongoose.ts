@@ -1,6 +1,7 @@
 import mongoose, { type ClientSession } from "mongoose";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
+import { runMigrations } from "@/lib/db/migrations";
 
 /**
  * Cached connection (survives hot reloads and serverless warm starts).
@@ -27,8 +28,10 @@ export async function connectDb(): Promise<typeof mongoose> {
         serverSelectionTimeoutMS: 5_000,
         retryWrites: true,
       })
-      .then((m) => {
+      .then(async (m) => {
         logger.info("mongodb.connected", { db: MONGODB_DB });
+        // Idempotent data fixes (e.g. question-pool index change). Never block the app on failure.
+        await runMigrations(m).catch((err) => logger.error("mongodb.migrations_failed", { error: (err as Error).message }));
         return m;
       })
       .catch((err) => {

@@ -47,12 +47,13 @@ export async function participationByDay(comp: ICompetition, at: Date = now()) {
 
 export async function questionPerformance(comp: ICompetition) {
   const [questions, stats] = await Promise.all([
-    Question.find({ competitionId: comp._id }).sort({ dayNumber: 1 }).select("dayNumber questionText category difficulty status").lean(),
-    DailyAnswer.aggregate<{ _id: number; attempts: number; correct: number; missed: number }>([
+    Question.find({ competitionId: comp._id }).sort({ dayNumber: 1, variant: 1 }).select("dayNumber variant questionText category difficulty status").lean(),
+    DailyAnswer.aggregate<{ _id: unknown; attempts: number; correct: number; missed: number }>([
       { $match: { competitionId: comp._id } },
       {
         $group: {
-          _id: "$dayNumber",
+          // Per question (each pool version separately), not per day.
+          _id: "$questionId",
           attempts: { $sum: { $cond: [{ $eq: ["$status", "ANSWERED"] }, 1, 0] } },
           correct: { $sum: { $cond: [{ $eq: ["$isCorrect", true] }, 1, 0] } },
           missed: { $sum: { $cond: [{ $eq: ["$status", "MISSED"] }, 1, 0] } },
@@ -60,9 +61,9 @@ export async function questionPerformance(comp: ICompetition) {
       },
     ]),
   ]);
-  const byDay = new Map(stats.map((s) => [s._id, s]));
+  const byQuestion = new Map(stats.map((s) => [String(s._id), s]));
   return questions.map((q) => {
-    const s = byDay.get(q.dayNumber);
+    const s = byQuestion.get(String(q._id));
     const attempts = s?.attempts ?? 0;
     const correct = s?.correct ?? 0;
     const accuracy = pct(correct, attempts);
@@ -71,6 +72,7 @@ export async function questionPerformance(comp: ICompetition) {
     return {
       id: String(q._id),
       dayNumber: q.dayNumber,
+      variant: q.variant ?? 1,
       questionText: q.questionText,
       category: q.category,
       difficulty: q.difficulty,

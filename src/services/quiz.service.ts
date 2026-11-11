@@ -11,6 +11,7 @@ import type { OptionId } from "@/lib/validation/quiz";
 import type { ICompetition } from "@/models/Competition";
 import { DailyAnswer } from "@/models/DailyAnswer";
 import { Question, type IQuestion } from "@/models/Question";
+import { QuizAttempt } from "@/models/QuizAttempt";
 import { User } from "@/models/User";
 import {
   clockFor,
@@ -20,6 +21,8 @@ import {
   toPublicCompetition,
   type PublicCompetitionDTO,
 } from "@/services/competition.service";
+import { flagFastAnswer } from "@/services/anticheat.service";
+import { questionForParticipant } from "@/services/pool.service";
 import { currentAttempt, displayMapping, displayOptions, lockAttempt, prepareAttemptSubmission } from "@/services/attempt.service";
 import { getParticipant, joinCompetition, recalculateParticipantStats, repairUserMissedDays } from "@/services/participant.service";
 
@@ -168,14 +171,18 @@ export async function getQuizState(userId: Types.ObjectId, at: Date = now(), opt
   }
 
   const answer = participant
-    ? await DailyAnswer.findOne({ competitionId: comp._id, userId, dayNumber }).select("status selectedOptionId selectedOptionIds answeredAt").lean()
+    ? await DailyAnswer.findOne({ competitionId: comp._id, userId, dayNumber }).select("status selectedOptionId selectedOptionIds answeredAt questionId").lean()
     : null;
 
   if (nowMs >= todayWindow.closesAt.getTime() && (!answer || answer.status !== "ANSWERED")) {
     return { ...active, today: { status: "CLOSED", dayNumber, opensAt, closesAt } };
   }
 
-  const question = await Question.findOne({ competitionId: comp._id, dayNumber, status: "PUBLISHED" }).lean();
+  // Question pools: the question already answered/started wins; otherwise this participant's version.
+  const pinnedId = answer?.questionId ?? (participant ? (await QuizAttempt.findOne({ competitionId: comp._id, userId, dayNumber }).select("questionId").lean())?.questionId : null);
+  const question = pinnedId
+    ? await Question.findById(pinnedId).lean()
+    : await questionForParticipant(comp._id, dayNumber, userId);
   if (!question) return { ...active, today: { status: "UNAVAILABLE", dayNumber, opensAt, closesAt } };
   // Only participants ever receive the question text and options.
   if (!participant) return { ...active, today: { status: "LOCKED", dayNumber, opensAt, closesAt } };
@@ -279,7 +286,7 @@ export async function getQuestionForDay(userId: Types.ObjectId, dayParam: string
   if (day > clock.currentDay!) throw new AppError("QUESTION_NOT_AVAILABLE");
   // Timed mode: the text is only released through POST /api/quiz/attempt/start.
   if (antiCheatOf(comp).enabled) throw new AppError("ATTEMPT_REQUIRED");
-  const q = await Question.findOne({ competitionId: comp._id, dayNumber: day, status: "PUBLISHED" }).lean();
+  const q = await questionForParticipant(comp._id, day, userId);
   if (!q) throw new AppError("QUESTION_NOT_AVAILABLE");
   return toUserQuestion(q, comp);
 }
@@ -333,10 +340,6 @@ export async function submitAnswer(params: {
   if (!user || !user.isActive) throw new AppError("USER_DISABLED");
   if (!(await getParticipant(comp._id, params.userId))) throw new AppError("NOT_PARTICIPANT", "Join the competition before answering.");
 
-  const question = await Question.findOne({ competitionId: comp._id, dayNumber, status: "PUBLISHED" }).lean();
-  if (!question) throw new AppError("QUESTION_NOT_AVAILABLE");
-  if (params.expectedQuestionId && params.expectedQuestionId !== String(question._id)) throw new AppError("QUESTION_EXPIRED");
-  const multiSelect = correctIdsOf(question).length > 1;
   let picked: string[] = [...new Set(params.optionIds?.length ? params.optionIds : params.optionId ? [params.optionId] : [])];
   // Timed mode: the client sent display letters; map them to the real ids via the attempt.
   const ac = antiCheatOf(comp);
@@ -344,6 +347,12 @@ export async function submitAnswer(params: {
     ? await prepareAttemptSubmission({ comp, userId: params.userId, dayNumber, sessionId: params.sessionId ?? null, displayIds: picked, at })
     : null;
   if (timed) picked = timed.realIds;
+
+  // The question this participant was shown: the attempt's in timed mode, else their pool version.
+  const question = timed ? await Question.findById(timed.attempt.questionId).lean() : await questionForParticipant(comp._id, dayNumber, params.userId);
+  if (!question || question.status !== "PUBLISHED") throw new AppError("QUESTION_NOT_AVAILABLE");
+  if (params.expectedQuestionId && params.expectedQuestionId !== String(question._id)) throw new AppError("QUESTION_EXPIRED");
+  const multiSelect = correctIdsOf(question).length > 1;
   // Store in option order so "C,A" and "A,C" are the same answer.
   const selectedIds = question.options.map((o) => o.id).filter((id) => picked.includes(id));
   if (!picked.length || selectedIds.length !== picked.length) throw new AppError("INVALID_OPTION");
@@ -409,6 +418,11 @@ export async function submitAnswer(params: {
   }
 
   // Note: the response is identical for correct and incorrect answers.
+  if (timed && ac.flagFastAnswers) {
+    // Best effort: a failure to flag must never fail a recorded answer.
+    await flagFastAnswer({ competitionId: comp._id, userId: params.userId, dayNumber, question, responseMs: timed.responseTimeMs, isCorrect }).catch(() => 0);
+  }
+
   // Echo the letters the participant saw (display ids in timed mode).
   const echoed = timed ? selectedIds.map(displayMapping(timed.attempt.optionOrder).toDisplay) : selectedIds;
   return { status: "ANSWERED", dayNumber, submittedAt: at.toISOString(), selectedOptionId: echoed[0]!, selectedOptionIds: echoed };

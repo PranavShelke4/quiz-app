@@ -14,6 +14,7 @@ import { QuizAttempt, type IQuizAttempt } from "@/models/QuizAttempt";
 import { SuspicionFlag } from "@/models/SuspicionFlag";
 import { User } from "@/models/User";
 import { clockFor, getCurrentCompetition } from "@/services/competition.service";
+import { questionForParticipant } from "@/services/pool.service";
 import { getParticipant, recalculateParticipantStats } from "@/services/participant.service";
 
 /**
@@ -153,10 +154,10 @@ export async function startAttempt(params: { userId: Types.ObjectId; sessionId: 
   const answered = await DailyAnswer.findOne({ competitionId: comp._id, userId: params.userId, dayNumber }).select("status").lean();
   if (answered) throw new AppError(answered.status === "ANSWERED" ? "ANSWER_ALREADY_SUBMITTED" : "ATTEMPT_LOCKED");
 
-  const question = await Question.findOne({ competitionId: comp._id, dayNumber, status: "PUBLISHED" }).lean();
-  if (!question) throw new AppError("QUESTION_NOT_AVAILABLE");
-
   const existing = await QuizAttempt.findOne({ competitionId: comp._id, userId: params.userId, dayNumber }).lean();
+  // A running attempt keeps its question; a new one gets this participant's pool version.
+  const question = existing ? await Question.findById(existing.questionId).lean() : await questionForParticipant(comp._id, dayNumber, params.userId);
+  if (!question) throw new AppError("QUESTION_NOT_AVAILABLE");
   if (existing) {
     const current = await expireIfDue(comp, existing, at);
     if (current.status !== "STARTED") throw new AppError(current.status === "SUBMITTED" ? "ANSWER_ALREADY_SUBMITTED" : "ATTEMPT_LOCKED");

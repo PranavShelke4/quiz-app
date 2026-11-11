@@ -104,6 +104,7 @@ const CompetitionSchema = new Schema<ICompetition>(
           lockOnLeave: { type: Boolean, required: true },
           watermark: { type: Boolean, required: true },
           requireFullscreen: { type: Boolean, required: true },
+          flagFastAnswers: { type: Boolean, default: true },
         },
         { _id: false },
       ),

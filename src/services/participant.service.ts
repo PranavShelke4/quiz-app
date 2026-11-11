@@ -1,4 +1,5 @@
 import { Types, type ClientSession } from "mongoose";
+import { pickForParticipant } from "@/lib/quiz/pools";
 import { connectDb } from "@/lib/db/mongoose";
 import { AppError, isDuplicateKeyError } from "@/lib/errors";
 import { computeParticipantStats, type ParticipantStats } from "@/lib/quiz/stats";
@@ -60,9 +61,12 @@ export async function runWithConcurrency<T>(items: readonly T[], limit: number, 
   await Promise.all(workers);
 }
 
+/** day → published question ids in variant order (question pools: several per day). */
 async function publishedQuestionDays(competitionId: Types.ObjectId, session?: ClientSession) {
-  const qs = await Question.find({ competitionId, status: "PUBLISHED" }).select("dayNumber").session(session ?? null).lean();
-  return new Map(qs.map((q) => [q.dayNumber, q._id]));
+  const qs = await Question.find({ competitionId, status: "PUBLISHED" }).select("dayNumber variant").sort({ dayNumber: 1, variant: 1, _id: 1 }).session(session ?? null).lean();
+  const byDay = new Map<number, Types.ObjectId[]>();
+  for (const q of qs) byDay.set(q.dayNumber, [...(byDay.get(q.dayNumber) ?? []), q._id]);
+  return byDay;
 }
 
 /**
@@ -100,7 +104,7 @@ export async function ensureMissedRecords(
           competitionId: comp._id,
           userId,
           dayNumber: day,
-          questionId: questionDays.get(day) ?? null,
+          questionId: pickForParticipant(questionDays.get(day) ?? [], { competitionId: String(comp._id), dayNumber: day, userId: String(userId) }) ?? null,
           selectedOptionId: null,
           isCorrect: null,
           score: 0,

@@ -14,6 +14,8 @@ export interface IQuestion {
   _id: Types.ObjectId;
   competitionId: Types.ObjectId;
   dayNumber: number;
+  /** Version number within the day's pool (1, 2, …). Each participant gets one version. */
+  variant: number;
   questionText: string;
   options: IQuestionOption[];
   /** First correct option. Kept for older documents/readers; mirrors correctOptionIds[0]. */
@@ -46,6 +48,7 @@ const QuestionSchema = new Schema<IQuestion>(
   {
     competitionId: { type: Schema.Types.ObjectId, ref: "Competition", required: true },
     dayNumber: { type: Number, required: true, min: 1 },
+    variant: { type: Number, default: 1, min: 1 },
     questionText: { type: String, required: true, trim: true, maxlength: 1000 },
     options: {
       type: [OptionSchema],
@@ -84,7 +87,8 @@ QuestionSchema.pre("validate", function () {
   if (new Set(ids).size !== ids.length) throw new Error("Correct options must be distinct");
 });
 
-QuestionSchema.index({ competitionId: 1, dayNumber: 1 }, { unique: true });
+// A day may hold several versions (question pools); versions are unique within the day.
+QuestionSchema.index({ competitionId: 1, dayNumber: 1, variant: 1 }, { unique: true });
 QuestionSchema.index({ competitionId: 1, scheduledDate: 1 });
 QuestionSchema.index({ competitionId: 1, status: 1 });
 

@@ -76,6 +76,7 @@ export const antiCheatSchema = z.object({
   lockOnLeave: z.boolean(),
   watermark: z.boolean(),
   requireFullscreen: z.boolean(),
+  flagFastAnswers: z.boolean().default(true),
 });
 
 export const attemptEventSchema = z.object({

@@ -1,7 +1,7 @@
 import { Schema, type Model, type Types } from "mongoose";
 import { defineModel } from "@/lib/db/model";
 
-export const FLAG_TYPES = ["SUSPICIOUS_ACTIVITY", "MULTIPLE_ACCOUNTS", "RAPID_SUBMISSIONS", "ATTEMPT_LOCKED"] as const;
+export const FLAG_TYPES = ["SUSPICIOUS_ACTIVITY", "MULTIPLE_ACCOUNTS", "RAPID_SUBMISSIONS", "ATTEMPT_LOCKED", "FAST_ANSWER", "SAME_WRONG_ANSWERS"] as const;
 export type FlagType = (typeof FLAG_TYPES)[number];
 export const FLAG_STATUSES = ["OPEN", "DISMISSED", "CONFIRMED"] as const;
 export type FlagStatus = (typeof FLAG_STATUSES)[number];
