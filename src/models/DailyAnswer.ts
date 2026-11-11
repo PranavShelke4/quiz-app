@@ -1,4 +1,5 @@
-import { Schema, model, models, type Model, type Types } from "mongoose";
+import { Schema, type Model, type Types } from "mongoose";
+import { defineModel } from "@/lib/db/model";
 import { OPTION_IDS, type OptionId } from "@/lib/validation/quiz";
 
 export const ANSWER_STATUSES = ["ANSWERED", "MISSED"] as const;
@@ -60,4 +61,4 @@ DailyAnswerSchema.index({ competitionId: 1, ip: 1, dayNumber: 1 });
 DailyAnswerSchema.index({ answeredAt: -1 });
 
 export const DailyAnswer: Model<IDailyAnswer> =
-  (models.DailyAnswer as Model<IDailyAnswer>) ?? model<IDailyAnswer>("DailyAnswer", DailyAnswerSchema);
+  defineModel<IDailyAnswer>("DailyAnswer", DailyAnswerSchema);

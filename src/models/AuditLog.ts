@@ -1,4 +1,5 @@
-import { Schema, model, models, type Model, type Types } from "mongoose";
+import { Schema, type Model, type Types } from "mongoose";
+import { defineModel } from "@/lib/db/model";
 
 export const AUDIT_ACTIONS = [
   "ADMIN_LOGIN",
@@ -88,4 +89,4 @@ AuditLogSchema.pre("save", function () {
 });
 
 export const AuditLog: Model<IAuditLog> =
-  (models.AuditLog as Model<IAuditLog>) ?? model<IAuditLog>("AuditLog", AuditLogSchema);
+  defineModel<IAuditLog>("AuditLog", AuditLogSchema);

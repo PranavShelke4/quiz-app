@@ -3,6 +3,7 @@ import { getCompetitionClock, computeEndDate, computeStartDate, getDayWindow, ty
 import { connectDb } from "@/lib/db/mongoose";
 import { AppError, isDuplicateKeyError } from "@/lib/errors";
 import { TIE_BREAKER_LABELS, type TieBreaker } from "@/lib/leaderboard/ranking";
+import { antiCheatOf, type AntiCheatSettings } from "@/lib/quiz/anticheat-config";
 import type { RequestMeta } from "@/lib/security/request-meta";
 import { now } from "@/lib/time/clock";
 import { localDateInZone, zonedTimeToUtc } from "@/lib/time/zoned";
@@ -92,6 +93,7 @@ export interface PublicCompetitionDTO {
   todayClosesAt: string | null;
   rules: string[];
   ruleSections: RuleSection[];
+  antiCheat: AntiCheatSettings;
   tieBreakers: { key: TieBreaker; label: string }[];
   scoring: { pointsPerCorrectAnswer: number; negativeMarking: boolean; negativePoints: number };
   leaderboardRevealed: boolean;
@@ -120,6 +122,7 @@ export function toPublicCompetition(comp: ICompetition, at: Date = now()): Publi
     todayClosesAt: clock.today?.closesAt.toISOString() ?? null,
     rules: ruleSectionsOf(comp).flatMap((s) => s.rules),
     ruleSections: ruleSectionsOf(comp),
+    antiCheat: antiCheatOf(comp),
     tieBreakers: comp.tieBreakers.map((key) => ({ key, label: TIE_BREAKER_LABELS[key] })),
     scoring: { ...comp.scoring },
     leaderboardRevealed: isLeaderboardRevealed(comp, at),
@@ -306,6 +309,7 @@ function buildDoc(input: CompetitionInput) {
     // Sections are the source of truth when sent; the flat list mirrors them for older readers.
     rules: input.ruleSections?.length ? input.ruleSections.flatMap((s) => s.rules) : input.rules,
     ruleSections: input.ruleSections ?? [],
+    ...(input.antiCheat ? { antiCheat: input.antiCheat } : {}),
   };
 }
 
@@ -324,7 +328,7 @@ export async function createCompetition(input: CompetitionInput, actor: Actor): 
 }
 
 /** Fields that may change after the competition has started. */
-const SAFE_AFTER_START = new Set(["name", "category", "description", "rules", "ruleSections", "leaderboardRevealMode", "leaderboardRevealLocalDateTime", "registrationOpen", "registrationCloseLocalDate"]);
+const SAFE_AFTER_START = new Set(["name", "category", "description", "rules", "ruleSections", "antiCheat", "leaderboardRevealMode", "leaderboardRevealLocalDateTime", "registrationOpen", "registrationCloseLocalDate"]);
 
 export async function updateCompetition(id: string, input: Partial<CompetitionInput>, actor: Actor): Promise<ICompetition> {
   await connectDb();
@@ -367,6 +371,7 @@ export async function updateCompetition(id: string, input: Partial<CompetitionIn
     // Sending sections (even an empty list) replaces the legacy flat list too.
     rules: input.ruleSections !== undefined ? input.ruleSections.flatMap((s) => s.rules) : (input.rules ?? comp.rules),
     ruleSections: input.ruleSections ?? comp.ruleSections ?? [],
+    antiCheat: input.antiCheat ?? comp.antiCheat ?? undefined,
   };
   const doc = buildDoc(merged);
 
@@ -511,6 +516,7 @@ export function toAdminCompetition(comp: ICompetition, at: Date = now()) {
     registrationCloseLocalDate: comp.registrationClosesAt ? localDateInZone(comp.registrationClosesAt, comp.timezone) : "",
     rules: comp.rules,
     ruleSections: (comp.ruleSections ?? []).map((s) => ({ title: s.title, description: s.description ?? "", rules: [...s.rules] })),
+    antiCheat: antiCheatOf(comp),
     finalizedAt: comp.finalizedAt?.toISOString() ?? null,
     publishedAt: comp.publishedAt?.toISOString() ?? null,
   };

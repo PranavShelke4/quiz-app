@@ -44,6 +44,27 @@ export default async function RulesPage() {
         </Card>
       ))}
 
+      {c?.antiCheat.enabled && (
+        <Card>
+          <CardHeader className="space-y-1">
+            <CardTitle>Timed questions &amp; fair play</CardTitle>
+            <p className="text-sm text-muted-foreground">Each day&apos;s question is hidden until you press Start.</p>
+          </CardHeader>
+          <CardContent>
+            <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed">
+              <li>You have {c.antiCheat.timeLimitSeconds} seconds to answer after pressing Start, checked by the server.</li>
+              {c.antiCheat.lockOnLeave && (
+                <li>Switching apps or tabs, locking your phone, reloading, or opening the quiz on another device ends that day&apos;s attempt — it&apos;s recorded as missed.</li>
+              )}
+              {c.antiCheat.shuffleOptions && <li>Options appear in a different order for each participant.</li>}
+              {c.antiCheat.watermark && <li>Questions are watermarked with your name, and copying is disabled.</li>}
+              {c.antiCheat.requireFullscreen && <li>The quiz opens fullscreen where your browser supports it.</li>}
+              <li>Tip: turn on Do Not Disturb before you start so a call or notification doesn&apos;t end your attempt.</li>
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Daily schedule</CardTitle>

@@ -1,4 +1,5 @@
-import { Schema, model, models, type Model, type Types } from "mongoose";
+import { Schema, type Model, type Types } from "mongoose";
+import { defineModel } from "@/lib/db/model";
 
 export const NOTIFICATION_TYPES = [
   "DAILY_REMINDER",
@@ -40,4 +41,4 @@ NotificationSchema.index({ userId: 1, createdAt: -1 });
 NotificationSchema.index({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 120 });
 
 export const Notification: Model<INotification> =
-  (models.Notification as Model<INotification>) ?? model<INotification>("Notification", NotificationSchema);
+  defineModel<INotification>("Notification", NotificationSchema);

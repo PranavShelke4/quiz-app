@@ -1,4 +1,5 @@
-import { Schema, model, models, type Model, type Types } from "mongoose";
+import { Schema, type Model, type Types } from "mongoose";
+import { defineModel } from "@/lib/db/model";
 
 export const SESSION_KINDS = ["USER", "ADMIN"] as const;
 export type SessionKind = (typeof SESSION_KINDS)[number];
@@ -43,4 +44,4 @@ SessionSchema.index({ userId: 1, revokedAt: 1 });
 SessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export const Session: Model<ISession> =
-  (models.Session as Model<ISession>) ?? model<ISession>("Session", SessionSchema);
+  defineModel<ISession>("Session", SessionSchema);

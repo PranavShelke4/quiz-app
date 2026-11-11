@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isValidLocalDate, isValidTimeZone } from "@/lib/time/zoned";
 import { TIE_BREAKERS } from "@/lib/leaderboard/ranking";
+import { ATTEMPT_EVENTS, MAX_TIME_LIMIT_SECONDS, MIN_TIME_LIMIT_SECONDS } from "@/lib/quiz/anticheat-config";
 
 export const OPTION_IDS = ["A", "B", "C", "D", "E", "F"] as const;
 export type OptionId = (typeof OPTION_IDS)[number];
@@ -68,6 +69,20 @@ export const ruleSectionSchema = z.object({
 });
 export type RuleSection = z.infer<typeof ruleSectionSchema>;
 
+export const antiCheatSchema = z.object({
+  enabled: z.boolean(),
+  timeLimitSeconds: z.number().int().min(MIN_TIME_LIMIT_SECONDS, `At least ${MIN_TIME_LIMIT_SECONDS} seconds`).max(MAX_TIME_LIMIT_SECONDS, `At most ${MAX_TIME_LIMIT_SECONDS} seconds`),
+  shuffleOptions: z.boolean(),
+  lockOnLeave: z.boolean(),
+  watermark: z.boolean(),
+  requireFullscreen: z.boolean(),
+});
+
+export const attemptEventSchema = z.object({
+  type: z.enum(ATTEMPT_EVENTS),
+  dayNumber: z.number().int().min(1).max(MAX_DURATION_DAYS).optional(),
+});
+
 export const competitionBaseSchema = z.object({
   name: z.string().trim().min(3).max(100),
   category: z.string().trim().max(60).optional(),
@@ -105,6 +120,7 @@ export const competitionBaseSchema = z.object({
   /** Legacy flat list; kept in sync with ruleSections (flattened) when sections are sent. */
   rules: z.array(z.string().trim().min(1).max(500)).max(30).default([]),
   ruleSections: z.array(ruleSectionSchema).max(15).optional(),
+  antiCheat: antiCheatSchema.optional(),
 });
 
 export const createCompetitionSchema = competitionBaseSchema;
@@ -161,7 +177,7 @@ export function parseOptionIdList(raw: string): string[] {
   return parts.map((p) => p.trim()).filter(Boolean);
 }
 
-/** Import row (CSV or XML), keyed by the documented header names. optionC–optionF are optional. */
+/** Import row (CSV or Excel), keyed by the documented header names. optionC–optionF are optional. */
 const optionalOptionText = z.string().trim().max(300).optional().transform((v) => v || "");
 export const csvQuestionRowSchema = z.object({
   dayNumber: z.coerce.number({ error: "dayNumber must be a number" }).int().min(1).max(MAX_DURATION_DAYS),
@@ -199,6 +215,40 @@ export const csvQuestionRowSchema = z.object({
     }),
   explanation: z.string().trim().max(2000).optional().transform((v) => v ?? ""),
 });
+
+/**
+ * Maps a spreadsheet header to its canonical column name, so "Day", "Day Number",
+ * "Option A", "Correct Answer" or "Score" work as well as the exact names.
+ * Unknown headers are returned unchanged (and ignored by the row schema).
+ */
+const HEADER_ALIASES: Record<string, string> = {
+  day: "dayNumber",
+  daynumber: "dayNumber",
+  dayno: "dayNumber",
+  question: "question",
+  questiontext: "question",
+  correctoption: "correctOption",
+  correctoptions: "correctOption",
+  correctanswer: "correctOption",
+  correctanswers: "correctOption",
+  correct: "correctOption",
+  answer: "correctOption",
+  answerkey: "correctOption",
+  category: "category",
+  difficulty: "difficulty",
+  level: "difficulty",
+  points: "points",
+  point: "points",
+  score: "points",
+  marks: "points",
+  explanation: "explanation",
+};
+export function normalizeImportHeader(header: string): string {
+  const key = header.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const option = /^(?:option|opt)([a-f])$/.exec(key);
+  if (option) return `option${option[1]!.toUpperCase()}`;
+  return HEADER_ALIASES[key] ?? header.trim();
+}
 
 /** Columns that must be present in a CSV import header. */
 export const CSV_REQUIRED_HEADERS = ["dayNumber", "question", "optionA", "optionB", "correctOption"] as const;

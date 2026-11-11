@@ -1,4 +1,5 @@
-import { Schema, model, models, type Model, type Types } from "mongoose";
+import { Schema, type Model, type Types } from "mongoose";
+import { defineModel } from "@/lib/db/model";
 
 export const AUTH_TOKEN_TYPES = ["RESET_PASSWORD"] as const;
 export type AuthTokenType = (typeof AUTH_TOKEN_TYPES)[number];
@@ -29,4 +30,4 @@ AuthTokenSchema.index({ userId: 1, type: 1 });
 AuthTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export const AuthToken: Model<IAuthToken> =
-  (models.AuthToken as Model<IAuthToken>) ?? model<IAuthToken>("AuthToken", AuthTokenSchema);
+  defineModel<IAuthToken>("AuthToken", AuthTokenSchema);

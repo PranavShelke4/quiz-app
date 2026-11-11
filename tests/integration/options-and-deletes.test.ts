@@ -79,7 +79,7 @@ describe("Questions: 2–6 options, multiple answers, custom points", () => {
     expect(badKey.status).toBe(400);
   });
 
-  it("imports CSV with 2-option and multi-answer rows, and parsed XML records", async () => {
+  it("imports CSV with 2-option and multi-answer rows, and rows read from Excel", async () => {
     const { cookie } = await adminCookie();
     const competitionId = await draftCompetition(cookie);
     const csv = [
@@ -93,7 +93,7 @@ describe("Questions: 2–6 options, multiple answers, custom points", () => {
     expect(await Question.findOne({ competitionId, dayNumber: 1 }).lean()).toMatchObject({ options: [{ id: "A" }, { id: "B" }], points: 2 });
     expect(await Question.findOne({ competitionId, dayNumber: 2 }).lean()).toMatchObject({ correctOptionIds: ["A", "C"] });
 
-    // XML is parsed in the browser into rows with the CSV column names.
+    // Excel files are read in the browser into rows keyed by their header cells.
     const records = [
       { dayNumber: "3", question: "Pick the primes", optionA: "2", optionB: "4", optionC: "5", correctOption: "A,C", category: "Math", difficulty: "", points: "", explanation: "" },
       { dayNumber: "4", question: "Gap in options", optionA: "x", optionB: "", optionC: "z", correctOption: "A" },
@@ -101,6 +101,24 @@ describe("Questions: 2–6 options, multiple answers, custom points", () => {
     ];
     const report = await call(importRoute, { cookie, body: { competitionId, records, dryRun: true } });
     expect(report.json.data).toMatchObject({ totalRows: 3, validRows: 1, errorRows: 2 });
+  });
+
+  it("accepts friendly spreadsheet headers (exact rows produced by the .xlsx reader)", async () => {
+    const { cookie } = await adminCookie();
+    const competitionId = await draftCompetition(cookie);
+    const records = [
+      { Day: "1", Question: "Is 0.1 + 0.2 about 0.3?", "Option A": "Yes", "Option B": "No", "Option C": "", "Correct Answer": "A", Difficulty: "easy", Score: "1", Explanation: "Floating point & rounding <ok>" },
+      { Day: "2", Question: "Pick the even numbers", "Option A": "2", "Option B": "3", "Option C": "4", "Correct Answer": "A;C", Difficulty: "MEDIUM", Score: "2", Explanation: "" },
+      { Day: "3", Question: "Ünïcödé — café?", "Option A": "Oui", "Option B": "Non", "Option C": "", "Correct Answer": "a", Difficulty: "HARD", Score: "3", Explanation: "" },
+    ];
+    const res = await call(importRoute, { cookie, body: { competitionId, records, dryRun: false } });
+    expect(res.json.data).toMatchObject({ totalRows: 3, validRows: 3, imported: 3 });
+    expect(await Question.findOne({ competitionId, dayNumber: 2 }).lean()).toMatchObject({ correctOptionIds: ["A", "C"], points: 2, difficulty: "MEDIUM" });
+    expect(await Question.findOne({ competitionId, dayNumber: 3 }).lean()).toMatchObject({ questionText: "Ünïcödé — café?", points: 3, difficulty: "HARD" });
+
+    // Missing required columns are reported up front, like for CSV.
+    const missing = await call(importRoute, { cookie, body: { competitionId, records: [{ Question: "No day column here?", "Option A": "x", "Option B": "y" }], dryRun: true } });
+    expect(missing.json.error?.message).toMatch(/dayNumber.*correctOption/);
   });
 
   it("scores a multiple-answer question all-or-nothing and tells participants it is multi-select", async () => {

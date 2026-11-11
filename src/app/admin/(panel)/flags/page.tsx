@@ -14,6 +14,7 @@ export const metadata: Metadata = { title: "Review flags" };
 
 const DESCRIPTIONS: Record<string, string> = {
   MULTIPLE_ACCOUNTS: "Several accounts answered from the same IP on the same day.",
+  ATTEMPT_LOCKED: "A timed attempt was ended because the participant left the page, reloaded, exited fullscreen or opened it on another device.",
   RAPID_SUBMISSIONS: "A cluster of accounts on one IP submitted within minutes of each other.",
   SUSPICIOUS_ACTIVITY: "Sessions from an unusual number of distinct IPs in 24 hours.",
 };

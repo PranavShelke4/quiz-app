@@ -1,4 +1,5 @@
-import { Schema, model, models, type Model, type Types } from "mongoose";
+import { Schema, type Model, type Types } from "mongoose";
+import { defineModel } from "@/lib/db/model";
 
 export interface ISettings {
   _id: Types.ObjectId;
@@ -89,4 +90,4 @@ const SettingsSchema = new Schema<ISettings>(
 SettingsSchema.index({ key: 1 }, { unique: true });
 
 export const Settings: Model<ISettings> =
-  (models.Settings as Model<ISettings>) ?? model<ISettings>("Settings", SettingsSchema);
+  defineModel<ISettings>("Settings", SettingsSchema);

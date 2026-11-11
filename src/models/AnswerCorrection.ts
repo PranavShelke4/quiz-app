@@ -1,4 +1,5 @@
-import { Schema, model, models, type Model, type Types } from "mongoose";
+import { Schema, type Model, type Types } from "mongoose";
+import { defineModel } from "@/lib/db/model";
 
 /** Immutable record of an administrative correction to a question's scoring. */
 export interface IAnswerCorrection {
@@ -34,5 +35,4 @@ AnswerCorrectionSchema.index({ competitionId: 1, createdAt: -1 });
 AnswerCorrectionSchema.index({ questionId: 1 });
 
 export const AnswerCorrection: Model<IAnswerCorrection> =
-  (models.AnswerCorrection as Model<IAnswerCorrection>) ??
-  model<IAnswerCorrection>("AnswerCorrection", AnswerCorrectionSchema);
+  defineModel<IAnswerCorrection>("AnswerCorrection", AnswerCorrectionSchema);

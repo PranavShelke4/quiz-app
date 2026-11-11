@@ -40,7 +40,10 @@ export const ERROR_DEFINITIONS = {
   QUESTION_NOT_AVAILABLE: { status: 403, message: "This question isn't available yet." },
   QUESTION_EXPIRED: { status: 410, message: "This question has closed and can no longer be answered." },
   ANSWER_ALREADY_SUBMITTED: { status: 409, message: "You have already submitted today's answer." },
-  INVALID_OPTION: { status: 400, message: "Please choose one of the four options." },
+  INVALID_OPTION: { status: 400, message: "Please choose a valid option." },
+  ATTEMPT_REQUIRED: { status: 409, message: "Press Start to begin today's question." },
+  ATTEMPT_LOCKED: { status: 409, message: "Your attempt for today's question has ended." },
+  ATTEMPT_OTHER_DEVICE: { status: 409, message: "Today's question was started on another device or browser." },
   QUESTION_LOCKED: { status: 409, message: "This question can no longer be changed. Use a correction instead." },
   IMPORT_INVALID: { status: 422, message: "The import file contains errors. Nothing was imported." },
 

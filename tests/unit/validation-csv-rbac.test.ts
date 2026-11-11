@@ -4,7 +4,7 @@ import { parseCsv, parseCsvWithHeader, toCsv } from "@/lib/csv";
 import { passwordSchema, signupSchema } from "@/lib/validation/auth";
 import { escapeRegex } from "@/lib/validation/common";
 import { scoreAnswer, DEFAULT_SCORING } from "@/lib/quiz/scoring";
-import { createQuestionSchema, csvQuestionRowSchema, parseOptionIdList, submitAnswerSchema, updateCompetitionSchema, updateQuestionSchema } from "@/lib/validation/quiz";
+import { createQuestionSchema, csvQuestionRowSchema, normalizeImportHeader, parseOptionIdList, submitAnswerSchema, updateCompetitionSchema, updateQuestionSchema } from "@/lib/validation/quiz";
 
 describe("answer submission validation", () => {
   it("strips client-supplied score, isCorrect, userId and status", () => {
@@ -108,6 +108,13 @@ describe("CSV", () => {
     expect(tf.success && tf.data.optionC).toBe("");
     const multi = csvQuestionRowSchema.safeParse({ dayNumber: "3", question: "Which are in Europe?", optionA: "Spain", optionB: "Brazil", optionC: "Poland", correctOption: "a;c" });
     expect(multi.success && multi.data.correctOption).toEqual(["A", "C"]);
+  });
+
+  it("maps friendly spreadsheet headers to column names", () => {
+    expect(["Day", "Day Number", "Question", "Option A", "option_f", "Correct Answer", "Answer", "Score", "Level"].map(normalizeImportHeader)).toEqual([
+      "dayNumber", "dayNumber", "question", "optionA", "optionF", "correctOption", "correctOption", "points", "difficulty",
+    ]);
+    expect(normalizeImportHeader("Notes")).toBe("Notes");
   });
 
   it("parses answer-key lists", () => {

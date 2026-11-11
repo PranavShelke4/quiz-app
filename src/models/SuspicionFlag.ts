@@ -1,6 +1,7 @@
-import { Schema, model, models, type Model, type Types } from "mongoose";
+import { Schema, type Model, type Types } from "mongoose";
+import { defineModel } from "@/lib/db/model";
 
-export const FLAG_TYPES = ["SUSPICIOUS_ACTIVITY", "MULTIPLE_ACCOUNTS", "RAPID_SUBMISSIONS"] as const;
+export const FLAG_TYPES = ["SUSPICIOUS_ACTIVITY", "MULTIPLE_ACCOUNTS", "RAPID_SUBMISSIONS", "ATTEMPT_LOCKED"] as const;
 export type FlagType = (typeof FLAG_TYPES)[number];
 export const FLAG_STATUSES = ["OPEN", "DISMISSED", "CONFIRMED"] as const;
 export type FlagStatus = (typeof FLAG_STATUSES)[number];
@@ -43,4 +44,4 @@ SuspicionFlagSchema.index({ competitionId: 1, userId: 1, type: 1, dayNumber: 1 }
 SuspicionFlagSchema.index({ status: 1, createdAt: -1 });
 
 export const SuspicionFlag: Model<ISuspicionFlag> =
-  (models.SuspicionFlag as Model<ISuspicionFlag>) ?? model<ISuspicionFlag>("SuspicionFlag", SuspicionFlagSchema);
+  defineModel<ISuspicionFlag>("SuspicionFlag", SuspicionFlagSchema);

@@ -9,6 +9,7 @@ import { Alert, Card, CardContent, CardHeader, CardTitle, Checkbox, Field, Input
 import { ApiClientError, api } from "@/lib/api/client";
 
 import { TIE_BREAKERS, TIE_BREAKER_LABELS, type TieBreaker } from "@/lib/leaderboard/ranking";
+import { MAX_TIME_LIMIT_SECONDS, MIN_TIME_LIMIT_SECONDS, type AntiCheatSettings } from "@/lib/quiz/anticheat-config";
 import { COMMON_TIME_ZONES, addDaysToLocalDate, isValidLocalDate } from "@/lib/time/zoned";
 
 export interface CompetitionFormValues {
@@ -27,6 +28,7 @@ export interface CompetitionFormValues {
   registrationOpen: boolean;
   registrationCloseLocalDate: string;
   ruleSections: RuleSectionValue[];
+  antiCheat: AntiCheatSettings;
 }
 
 export interface RuleSectionValue {
@@ -84,6 +86,7 @@ export function CompetitionForm({
           name: v.name,
           description: v.description,
           ruleSections,
+          antiCheat: v.antiCheat,
           leaderboardRevealMode: v.leaderboardRevealMode,
           leaderboardRevealLocalDateTime: v.leaderboardRevealLocalDateTime,
           registrationOpen: v.registrationOpen,
@@ -232,6 +235,8 @@ export function CompetitionForm({
         </CardContent>
       </Card>
 
+      <AntiCheatCard value={v.antiCheat} onChange={(antiCheat) => set("antiCheat", antiCheat)} error={errors.antiCheat} />
+
       <RulesEditor sections={v.ruleSections} onChange={(sections) => set("ruleSections", sections)} error={errors.ruleSections} />
 
       <div className="flex justify-end gap-2">
@@ -301,6 +306,56 @@ function RulesEditor({ sections, onChange, error }: { sections: RuleSectionValue
         <Button variant="outline" size="sm" disabled={sections.length >= 15} onClick={() => onChange([...sections, { title: "", description: "", rules: [""] }])}>
           <Plus /> Add section
         </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AntiCheatCard({ value, onChange, error }: { value: AntiCheatSettings; onChange: (v: AntiCheatSettings) => void; error?: string[] }) {
+  const set = <K extends keyof AntiCheatSettings>(k: K, v: AntiCheatSettings[K]) => onChange({ ...value, [k]: v });
+  const toggles: { key: Exclude<keyof AntiCheatSettings, "enabled" | "timeLimitSeconds">; label: string; hint: string }[] = [
+    { key: "lockOnLeave", label: "Lock on leave", hint: "Switching app/tab, locking the phone, reloading or opening the quiz on a second device ends the attempt as missed and raises a review flag." },
+    { key: "shuffleOptions", label: "Shuffle options", hint: "Each participant sees the options in a different order, so sharing a letter is useless." },
+    { key: "watermark", label: "Watermark & no copy", hint: "Faint name/email watermark over the question; copy, right-click and long-press are blocked." },
+    { key: "requireFullscreen", label: "Fullscreen (where supported)", hint: "Asks for fullscreen on Start; leaving it counts as leaving. iPhones don't support it and are never penalised for that." },
+  ];
+  return (
+    <Card>
+      <CardHeader><CardTitle>Anti-cheat</CardTitle></CardHeader>
+      <CardContent className="space-y-4">
+        <label className="flex items-start gap-3 text-sm">
+          <Checkbox checked={value.enabled} onChange={(e) => set("enabled", e.target.checked)} className="mt-0.5" />
+          <span>
+            <span className="font-medium">Timed attempts</span>
+            <span className="block text-muted-foreground">The question stays hidden until the participant presses Start, then must be answered within the time limit (checked by the server).</span>
+          </span>
+        </label>
+        {error && <p className="text-xs text-danger">{error[0]}</p>}
+        <fieldset disabled={!value.enabled} className="space-y-4 disabled:opacity-50">
+          <Field id="ac-time" label="Time limit (seconds)" hint={`${MIN_TIME_LIMIT_SECONDS}–${MAX_TIME_LIMIT_SECONDS}. 30–60 s leaves no time to search for answers.`}>
+            <Input
+              id="ac-time"
+              type="number"
+              min={MIN_TIME_LIMIT_SECONDS}
+              max={MAX_TIME_LIMIT_SECONDS}
+              value={value.timeLimitSeconds}
+              onChange={(e) => set("timeLimitSeconds", Number(e.target.value))}
+              className="max-w-40"
+            />
+          </Field>
+          {toggles.map((t) => (
+            <label key={t.key} className="flex items-start gap-3 text-sm">
+              <Checkbox checked={value[t.key]} onChange={(e) => set(t.key, e.target.checked)} className="mt-0.5" />
+              <span>
+                <span className="font-medium">{t.label}</span>
+                <span className="block text-muted-foreground">{t.hint}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+        <p className="text-xs text-muted-foreground">
+          No website can block screenshots or a second phone. The timer, shuffling and watermark make those far less useful.
+        </p>
       </CardContent>
     </Card>
   );

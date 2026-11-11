@@ -11,7 +11,7 @@ import { Alert, Badge, Card, Checkbox, EmptyState, Field, Input, Select, Textare
 import { TBody, TD, TH, THead, TR, Table } from "@/components/ui/table";
 import { ApiClientError, api } from "@/lib/api/client";
 import { toCsv } from "@/lib/csv";
-import { XML_TEMPLATE, parseQuestionsXml } from "@/lib/question-xml";
+import { readXlsx } from "@/lib/question-xlsx";
 import type { AdminQuestionDTO } from "@/services/question.service";
 
 type OptionId = "A" | "B" | "C" | "D" | "E" | "F";
@@ -113,7 +113,7 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
-              <Upload /> Import CSV / XML
+              <Upload /> Import CSV / Excel
             </Button>
             <Button size="sm" disabled={!freeDays.length} onClick={() => setEditor({ draft: emptyDraft(freeDays[0]!) })}>
               <Plus /> Add question
@@ -126,12 +126,12 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
         <EmptyState
           icon={<FileQuestion />}
           title="No questions added yet."
-          description="Add your first question or import questions from a CSV or XML file."
+          description="Add your first question or import questions from a CSV or Excel (.xlsx) file."
           action={
             !readOnly && (
               <div className="flex gap-2">
                 <Button onClick={() => setEditor({ draft: emptyDraft(1) })}><Plus /> Add question</Button>
-                <Button variant="outline" onClick={() => setImportOpen(true)}><Upload /> Import CSV / XML</Button>
+                <Button variant="outline" onClick={() => setImportOpen(true)}><Upload /> Import CSV / Excel</Button>
               </div>
             )
           }
@@ -299,7 +299,7 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
       />
 
       {correcting && <CorrectionDialog q={correcting} onClose={() => setCorrecting(null)} />}
-      {importOpen && <ImportDialog comp={comp} freeDays={freeDays} onClose={() => setImportOpen(false)} />}
+      {importOpen && <ImportDialog comp={comp} onClose={() => setImportOpen(false)} />}
       {dupFor && <DuplicateDialog q={dupFor} freeDays={freeDays} onClose={() => setDupFor(null)} />}
     </div>
   );
@@ -555,11 +555,12 @@ const TEMPLATE = [
   "",
 ].join("\n");
 
-const looksLikeXml = (text: string) => text.trimStart().startsWith("<");
 
-function ImportDialog({ comp, freeDays, onClose }: { comp: CompInfo; freeDays: number[]; onClose: () => void }) {
+function ImportDialog({ comp, onClose }: { comp: CompInfo; onClose: () => void }) {
   const router = useRouter();
   const [csv, setCsv] = useState("");
+  /** Rows read from an uploaded .xlsx file (replaces the CSV text while set). */
+  const [sheet, setSheet] = useState<{ fileName: string; sheetName: string; records: Record<string, string>[] } | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [report, setReport] = useState<ImportReport | null>(null);
   const [opts, setOpts] = useState({ publish: false, overwrite: false, skipInvalid: false });
@@ -570,20 +571,7 @@ function ImportDialog({ comp, freeDays, onClose }: { comp: CompInfo; freeDays: n
     setBusy(dryRun ? "validate" : "import");
     setError(null);
     try {
-      let payload: { csv: string } | { records: Record<string, string>[] };
-      if (looksLikeXml(csv)) {
-        try {
-          const parsed = parseQuestionsXml(csv, freeDays);
-          setWarnings(parsed.warnings);
-          payload = { records: parsed.records };
-        } catch (e) {
-          setError((e as Error).message);
-          return;
-        }
-      } else {
-        setWarnings([]);
-        payload = { csv };
-      }
+      const payload = sheet ? { records: sheet.records } : { csv };
       const r = await api<ImportReport>("/api/admin/questions/import", { body: { competitionId: comp.id, ...payload, dryRun, ...opts } });
       setReport(r);
       if (!dryRun) {
@@ -602,7 +590,7 @@ function ImportDialog({ comp, freeDays, onClose }: { comp: CompInfo; freeDays: n
   }
 
   function download(name: string, content: string) {
-    const url = URL.createObjectURL(new Blob([content], { type: name.endsWith(".xml") ? "application/xml" : "text/csv" }));
+    const url = URL.createObjectURL(new Blob([content], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url;
     a.download = name;
@@ -617,12 +605,12 @@ function ImportDialog({ comp, freeDays, onClose }: { comp: CompInfo; freeDays: n
       open
       side="right"
       onClose={onClose}
-      title="Import questions from CSV or XML"
+      title="Import questions from CSV or Excel"
       description={`Into ${comp.name}. The whole file is validated first; nothing is imported unless every row is valid (unless you opt in to skipping invalid rows).`}
       footer={
         <>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button variant="outline" onClick={() => send(true)} disabled={!csv.trim()} loading={busy === "validate"} loadingText="Validating…">Validate</Button>
+          <Button variant="outline" onClick={() => send(true)} disabled={!sheet && !csv.trim()} loading={busy === "validate"} loadingText="Validating…">Validate</Button>
           <Button onClick={() => send(false)} disabled={!canImport} loading={busy === "import"} loadingText="Importing…">
             Import {report ? (opts.skipInvalid ? report.validRows : report.totalRows) : ""} rows
           </Button>
@@ -635,30 +623,58 @@ function ImportDialog({ comp, freeDays, onClose }: { comp: CompInfo; freeDays: n
             <Upload className="size-4" aria-hidden /> Choose file
             <input
               type="file"
-              accept=".csv,.xml,text/csv,text/xml,application/xml"
+              accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               className="sr-only"
               onChange={async (e) => {
                 const f = e.target.files?.[0];
                 if (!f) return;
-                if (f.size > 1_400_000) return toast.error("File is too large (max ~1.4 MB).");
-                setCsv(await f.text());
+                e.target.value = ""; // allow re-choosing the same file after editing it
                 setReport(null);
                 setWarnings([]);
                 setError(null);
-                e.target.value = ""; // allow re-choosing the same file after editing it
+                const name = f.name.toLowerCase();
+                if (name.endsWith(".xls")) return setError("Old .xls files aren't supported. Open the file in Excel and save it as .xlsx (or CSV).");
+                if (name.endsWith(".xlsx")) {
+                  if (f.size > 5_000_000) return toast.error("File is too large (max 5 MB).");
+                  try {
+                    const res = readXlsx(await f.arrayBuffer());
+                    if (res.records.length > 500) return setError(`The sheet has ${res.records.length} rows; import at most 500 at a time.`);
+                    setSheet({ fileName: f.name, sheetName: res.sheetName, records: res.records });
+                    setWarnings(res.warnings);
+                    setCsv("");
+                  } catch (err) {
+                    setSheet(null);
+                    setError((err as Error).message);
+                  }
+                  return;
+                }
+                if (f.size > 1_400_000) return toast.error("File is too large (max ~1.4 MB).");
+                setSheet(null);
+                setCsv(await f.text());
               }}
             />
           </label>
-          <Button variant="ghost" size="sm" onClick={() => download("questions-template.csv", TEMPLATE)}><Download /> CSV template</Button>
-          <Button variant="ghost" size="sm" onClick={() => download("questions-template.xml", XML_TEMPLATE)}><Download /> XML template</Button>
+          <Button variant="ghost" size="sm" onClick={() => download("questions-template.csv", TEMPLATE)}><Download /> Template</Button>
         </div>
-        <Field
-          id="csv"
-          label={looksLikeXml(csv) ? "XML content" : "CSV or XML content"}
-          hint="CSV columns: dayNumber, question, optionA, optionB (required), optionC–optionF (optional), correctOption (e.g. A, or A;C for several correct answers), category, difficulty (EASY/MEDIUM/HARD), points, explanation. XML: see the XML template — Moodle XML exports also work."
-        >
-          <Textarea id="csv" value={csv} onChange={(e) => { setCsv(e.target.value); setReport(null); }} className="min-h-40 font-mono text-xs" />
-        </Field>
+        {sheet ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border bg-muted/40 px-4 py-3 text-sm">
+            <span>
+              <strong>{sheet.fileName}</strong> · sheet &ldquo;{sheet.sheetName}&rdquo; · {sheet.records.length} row{sheet.records.length === 1 ? "" : "s"}
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => { setSheet(null); setReport(null); setWarnings([]); }}>
+              <X /> Remove file
+            </Button>
+          </div>
+        ) : (
+          <Field id="csv" label="CSV content" hint="Choose a .csv or .xlsx file, or paste CSV here.">
+            <Textarea id="csv" value={csv} onChange={(e) => { setCsv(e.target.value); setReport(null); }} className="min-h-40 font-mono text-xs" />
+          </Field>
+        )}
+        <p className="text-xs text-muted-foreground">
+          Columns (first row): dayNumber, question, optionA, optionB (required), optionC–optionF (optional), correctOption (e.g. A, or A;C for several correct
+          answers), category, difficulty (EASY/MEDIUM/HARD), points, explanation. Friendly headers like &ldquo;Day&rdquo;, &ldquo;Option A&rdquo; or
+          &ldquo;Correct Answer&rdquo; also work. For Excel, only the first sheet is read. The template opens in Excel too.
+        </p>
         <div className="space-y-2 text-sm">
           <label className="flex items-center gap-2"><Checkbox checked={opts.publish} onChange={(e) => setOpts({ ...opts, publish: e.target.checked })} /> Publish imported questions</label>
           <label className="flex items-center gap-2"><Checkbox checked={opts.overwrite} onChange={(e) => { setOpts({ ...opts, overwrite: e.target.checked }); setReport(null); }} /> Overwrite existing questions on the same days (upcoming days only)</label>

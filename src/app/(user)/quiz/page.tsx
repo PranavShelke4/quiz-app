@@ -5,6 +5,7 @@ import { nextQuestionLabel } from "@/components/quiz/format";
 import { JoinButton } from "@/components/quiz/join-button";
 import { ProgressCalendar } from "@/components/quiz/progress-calendar";
 import { QuizCard } from "@/components/quiz/quiz-card";
+import { TimedQuiz } from "@/components/quiz/timed-quiz";
 import { ServerTimeBadge } from "@/components/server-time-badge";
 import { ButtonLink } from "@/components/ui/button";
 import { Badge, Card, CardContent, EmptyState, Progress, StatCard } from "@/components/ui/primitives";
@@ -16,7 +17,8 @@ export const metadata: Metadata = { title: "Today's quiz" };
 
 export default async function QuizPage() {
   const auth = await requireUser("/quiz");
-  const state = await getQuizState(auth.userId);
+  // The session lets the server tell a reload (same browser) from a second device.
+  const state = await getQuizState(auth.userId, undefined, { sessionId: auth.session.id });
   const c = state.competition;
 
   if (!c) {
@@ -61,6 +63,7 @@ export default async function QuizPage() {
   const today = state.today!;
   const p = state.progress;
   const label = nextQuestionLabel(state.nextQuestionAt, c.serverTime, c.timezone);
+  const watermark = `${auth.user.name} · ${auth.user.email}`;
 
   return (
     <div className="mx-auto max-w-[700px] space-y-6">
@@ -129,6 +132,29 @@ export default async function QuizPage() {
         </Card>
       ) : today.status === "UNAVAILABLE" ? (
         <EmptyState icon={<Hourglass />} title="Today's question isn't available yet" description="Please check back shortly." />
+      ) : today.status === "READY" ? (
+        <TimedQuiz
+          key={`ready-${today.dayNumber}`}
+          mode="READY"
+          info={today.info}
+          antiCheat={today.antiCheat}
+          dayNumber={today.dayNumber}
+          closesAt={today.closesAt}
+          watermark={watermark}
+          nextQuestionLabel={label}
+        />
+      ) : today.status === "IN_PROGRESS" ? (
+        <TimedQuiz
+          key={`run-${today.dayNumber}`}
+          mode="IN_PROGRESS"
+          started={{ question: today.question, deadlineAt: today.deadlineAt, serverTime: c.serverTime }}
+          antiCheat={today.antiCheat}
+          closesAt={today.closesAt}
+          watermark={watermark}
+          nextQuestionLabel={label}
+        />
+      ) : today.status === "ENDED" ? (
+        <TimedQuiz key={`ended-${today.dayNumber}`} mode="ENDED" reason={today.reason} nextQuestionLabel={label} />
       ) : (
         <QuizCard
           key={today.question.id}

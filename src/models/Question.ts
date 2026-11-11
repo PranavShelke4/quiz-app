@@ -1,4 +1,5 @@
-import { Schema, model, models, type Model, type Types } from "mongoose";
+import { Schema, type Model, type Types } from "mongoose";
+import { defineModel } from "@/lib/db/model";
 import { DIFFICULTIES, MAX_OPTIONS, MIN_OPTIONS, OPTION_IDS, type Difficulty, type OptionId } from "@/lib/validation/quiz";
 
 export const QUESTION_STATUSES = ["DRAFT", "PUBLISHED"] as const;
@@ -88,4 +89,4 @@ QuestionSchema.index({ competitionId: 1, scheduledDate: 1 });
 QuestionSchema.index({ competitionId: 1, status: 1 });
 
 export const Question: Model<IQuestion> =
-  (models.Question as Model<IQuestion>) ?? model<IQuestion>("Question", QuestionSchema);
+  defineModel<IQuestion>("Question", QuestionSchema);

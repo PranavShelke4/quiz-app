@@ -12,6 +12,7 @@ import {
   CSV_REQUIRED_HEADERS,
   OPTION_IDS,
   csvQuestionRowSchema,
+  normalizeImportHeader,
   type OptionId,
   type QuestionInput,
 } from "@/lib/validation/quiz";
@@ -281,7 +282,7 @@ export async function importQuestionsCsv(params: {
   competitionId: string;
   /** Either raw CSV text… */
   csv?: string;
-  /** …or already-parsed rows keyed by the CSV header names (used by the XML import). */
+  /** …or rows already read from an .xlsx file in the browser, keyed by their header cells. */
   records?: Record<string, string>[];
   dryRun: boolean;
   skipInvalid: boolean;
@@ -293,19 +294,24 @@ export async function importQuestionsCsv(params: {
   const comp = await getCompetitionById(params.competitionId);
   if (comp.status === "COMPLETED" || comp.status === "ARCHIVED") throw new AppError("COMPETITION_LOCKED");
 
-  let parsed: { headers: string[]; records: Record<string, string>[] };
+  let raw: { headers: string[]; records: Record<string, string>[] };
   if (params.records) {
-    parsed = { headers: [...CSV_REQUIRED_HEADERS], records: params.records };
+    raw = { headers: [...new Set(params.records.flatMap((r) => Object.keys(r)))], records: params.records };
   } else {
     try {
-      parsed = parseCsvWithHeader(params.csv ?? "");
+      raw = parseCsvWithHeader(params.csv ?? "");
     } catch (e) {
       throw new AppError("VALIDATION_ERROR", `Couldn't read the CSV: ${(e as Error).message}`);
     }
-    const missingHeaders = CSV_REQUIRED_HEADERS.filter((h) => !parsed.headers.includes(h));
-    if (missingHeaders.length) {
-      throw new AppError("VALIDATION_ERROR", `Missing required column(s): ${missingHeaders.join(", ")}`);
-    }
+  }
+  // Accept friendly headers ("Day", "Option A", "Correct Answer"…) for both CSV and Excel.
+  const parsed = {
+    headers: raw.headers.map(normalizeImportHeader),
+    records: raw.records.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [normalizeImportHeader(k), v]))),
+  };
+  const missingHeaders = CSV_REQUIRED_HEADERS.filter((h) => !parsed.headers.includes(h));
+  if (missingHeaders.length) {
+    throw new AppError("VALIDATION_ERROR", `Missing required column(s): ${missingHeaders.join(", ")}`);
   }
   if (parsed.records.length === 0) throw new AppError("VALIDATION_ERROR", "The file has no data rows.");
   if (parsed.records.length > 500) throw new AppError("VALIDATION_ERROR", "Import at most 500 rows at a time.");

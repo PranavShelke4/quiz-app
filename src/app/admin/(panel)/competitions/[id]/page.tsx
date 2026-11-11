@@ -91,6 +91,7 @@ export default async function CompetitionDetailPage({ params }: PageProps<"/admi
             registrationOpen: c.registrationOpen,
             registrationCloseLocalDate: c.registrationCloseLocalDate,
             // Older competitions only have a flat list: show it as one editable section.
+            antiCheat: c.antiCheat,
             ruleSections: c.ruleSections.length ? c.ruleSections : c.rules.length ? [{ title: "General rules", description: "", rules: c.rules }] : [],
           }}
         />
