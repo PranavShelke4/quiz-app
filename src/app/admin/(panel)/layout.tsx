@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { LogoutButton } from "@/components/auth/logout-button";
 import { AdminMobileNav, AdminSidebar } from "@/components/admin/sidebar";
@@ -19,14 +20,18 @@ export default async function AdminPanelLayout({ children }: { children: React.R
       <AdminSidebar isSuper={isSuper} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b bg-background/90 px-4 backdrop-blur sm:px-6">
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <AdminMobileNav isSuper={isSuper} />
-            <Link href="/" className="text-sm text-muted-foreground hover:text-foreground">
-              ← View site
-            </Link>
+            <span className="truncate font-semibold lg:hidden">Quiz Admin</span>
           </div>
-          <div className="flex items-center gap-3">
-            <Badge tone={isSuper ? "primary" : "neutral"}>{isSuper ? "Super admin" : "Admin"}</Badge>
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Kept away from the mobile menu button so it can't be hit by accident; on phones it lives in the menu. */}
+            <Link href="/" className="hidden items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground sm:inline-flex">
+              <ExternalLink className="size-4" aria-hidden /> View site
+            </Link>
+            <span className="hidden sm:inline-flex">
+              <Badge tone={isSuper ? "primary" : "neutral"}>{isSuper ? "Super admin" : "Admin"}</Badge>
+            </span>
             <Avatar name={auth.user.name} src={auth.user.avatar} />
             <span className="hidden text-sm font-medium sm:inline">{auth.user.name}</span>
             <LogoutButton compact redirectTo="/admin/login" />

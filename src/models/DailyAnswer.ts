@@ -10,7 +10,10 @@ export interface IDailyAnswer {
   userId: Types.ObjectId;
   dayNumber: number;
   questionId: Types.ObjectId | null;
+  /** First selected option (mirrors selectedOptionIds[0]). */
   selectedOptionId: OptionId | null;
+  /** Every selected option; more than one only for multiple-answer questions. */
+  selectedOptionIds?: OptionId[];
   /** Server-computed; never exposed to participants before the leaderboard is revealed. */
   isCorrect: boolean | null;
   score: number;
@@ -34,6 +37,7 @@ const DailyAnswerSchema = new Schema<IDailyAnswer>(
     dayNumber: { type: Number, required: true, min: 1 },
     questionId: { type: Schema.Types.ObjectId, ref: "Question", default: null },
     selectedOptionId: { type: String, enum: [...OPTION_IDS, null], default: null },
+    selectedOptionIds: { type: [{ type: String, enum: OPTION_IDS }], default: undefined },
     isCorrect: { type: Boolean, default: null },
     score: { type: Number, required: true, default: 0 },
     status: { type: String, enum: ANSWER_STATUSES, required: true },

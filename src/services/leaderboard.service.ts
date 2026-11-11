@@ -4,6 +4,7 @@ import { AppError } from "@/lib/errors";
 import { rankParticipants, type Ranked, type RankableParticipant } from "@/lib/leaderboard/ranking";
 import type { RequestMeta } from "@/lib/security/request-meta";
 import { now } from "@/lib/time/clock";
+import { correctIdsOf, selectedIdsOf } from "@/lib/quiz/scoring";
 import { escapeRegex } from "@/lib/validation/common";
 import { Competition, type ICompetition } from "@/models/Competition";
 import { CompetitionParticipant, type ICompetitionParticipant } from "@/models/CompetitionParticipant";
@@ -292,8 +293,10 @@ export async function getUserResults(userId: Types.ObjectId, at: Date = now()) {
       difficulty: q.difficulty,
       options: q.options.map((o) => ({ id: o.id, text: o.text })),
       correctOptionId: q.correctOptionId,
+      correctOptionIds: correctIdsOf(q),
       explanation: q.explanation,
       selectedOptionId: a?.selectedOptionId ?? null,
+      selectedOptionIds: a ? selectedIdsOf(a) : [],
       result: !a || a.status === "MISSED" ? ("MISSED" as const) : a.isCorrect ? ("CORRECT" as const) : ("WRONG" as const),
       points: a?.score ?? 0,
       answeredAt: a?.answeredAt?.toISOString() ?? null,

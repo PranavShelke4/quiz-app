@@ -8,8 +8,8 @@ export interface IAnswerCorrection {
   dayNumber: number;
   adminId: Types.ObjectId;
   reason: string;
-  oldValue: { correctOptionId: string; points: number | null };
-  newValue: { correctOptionId: string; points: number | null };
+  oldValue: { correctOptionId: string; correctOptionIds?: string[]; points: number | null };
+  newValue: { correctOptionId: string; correctOptionIds?: string[]; points: number | null };
   affectedAnswers: number;
   affectedParticipants: number;
   createdAt: Date;
@@ -22,8 +22,8 @@ const AnswerCorrectionSchema = new Schema<IAnswerCorrection>(
     dayNumber: { type: Number, required: true },
     adminId: { type: Schema.Types.ObjectId, ref: "User", required: true },
     reason: { type: String, required: true, maxlength: 1000 },
-    oldValue: { correctOptionId: String, points: { type: Number, default: null } },
-    newValue: { correctOptionId: String, points: { type: Number, default: null } },
+    oldValue: { correctOptionId: String, correctOptionIds: { type: [String], default: undefined }, points: { type: Number, default: null } },
+    newValue: { correctOptionId: String, correctOptionIds: { type: [String], default: undefined }, points: { type: Number, default: null } },
     affectedAnswers: { type: Number, default: 0 },
     affectedParticipants: { type: Number, default: 0 },
   },

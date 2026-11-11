@@ -2,7 +2,7 @@ import type { Types } from "mongoose";
 import { getDayWindow } from "@/lib/competition/schedule";
 import { connectDb, withTransaction } from "@/lib/db/mongoose";
 import { AppError, isDuplicateKeyError } from "@/lib/errors";
-import { scoreAnswer } from "@/lib/quiz/scoring";
+import { correctIdsOf, scoreAnswer, selectedIdsOf } from "@/lib/quiz/scoring";
 import { computeStreaks } from "@/lib/quiz/streak";
 import type { RequestMeta } from "@/lib/security/request-meta";
 import { now } from "@/lib/time/clock";
@@ -30,6 +30,8 @@ export interface UserQuestionDTO {
   dayNumber: number;
   questionText: string;
   options: { id: OptionId; text: string }[];
+  /** True when more than one option is correct ("select all that apply"). Which ones stays secret. */
+  multiSelect: boolean;
   points: number;
   category: string;
   difficulty: string;
@@ -41,6 +43,7 @@ export function toUserQuestion(q: IQuestion, comp: ICompetition): UserQuestionDT
     dayNumber: q.dayNumber,
     questionText: q.questionText,
     options: q.options.map((o) => ({ id: o.id, text: o.text })),
+    multiSelect: correctIdsOf(q).length > 1,
     points: q.points ?? comp.scoring.pointsPerCorrectAnswer,
     category: q.category,
     difficulty: q.difficulty,
@@ -65,7 +68,7 @@ export interface QuizStateDTO {
   canJoin: boolean;
   today:
     | { status: "OPEN"; dayNumber: number; opensAt: string; closesAt: string; question: UserQuestionDTO }
-    | { status: "ANSWERED"; dayNumber: number; opensAt: string; closesAt: string; submittedAt: string; selectedOptionId: OptionId; question: UserQuestionDTO }
+    | { status: "ANSWERED"; dayNumber: number; opensAt: string; closesAt: string; submittedAt: string; selectedOptionId: OptionId; selectedOptionIds: OptionId[]; question: UserQuestionDTO }
     | { status: "UNAVAILABLE"; dayNumber: number; opensAt: string; closesAt: string }
     /** The question is live but the user hasn't joined — its text and options are withheld. */
     | { status: "LOCKED"; dayNumber: number; opensAt: string; closesAt: string }
@@ -150,7 +153,7 @@ export async function getQuizState(userId: Types.ObjectId, at: Date = now()): Pr
   }
 
   const answer = participant
-    ? await DailyAnswer.findOne({ competitionId: comp._id, userId, dayNumber }).select("status selectedOptionId answeredAt").lean()
+    ? await DailyAnswer.findOne({ competitionId: comp._id, userId, dayNumber }).select("status selectedOptionId selectedOptionIds answeredAt").lean()
     : null;
 
   if (nowMs >= todayWindow.closesAt.getTime() && (!answer || answer.status !== "ANSWERED")) {
@@ -172,6 +175,7 @@ export async function getQuizState(userId: Types.ObjectId, at: Date = now()): Pr
         closesAt,
         submittedAt: answer.answeredAt.toISOString(),
         selectedOptionId: answer.selectedOptionId,
+        selectedOptionIds: selectedIdsOf(answer) as OptionId[],
         question: toUserQuestion(question, comp),
       },
     };
@@ -207,6 +211,7 @@ export interface SubmitResult {
   dayNumber: number;
   submittedAt: string;
   selectedOptionId: OptionId;
+  selectedOptionIds: OptionId[];
 }
 
 /**
@@ -221,7 +226,10 @@ export interface SubmitResult {
  */
 export async function submitAnswer(params: {
   userId: Types.ObjectId;
-  optionId: OptionId;
+  /** Single-answer questions. */
+  optionId?: OptionId;
+  /** Multiple-answer questions. */
+  optionIds?: OptionId[];
   expectedDayNumber?: number;
   expectedQuestionId?: string;
   sessionId?: Types.ObjectId | null;
@@ -250,7 +258,12 @@ export async function submitAnswer(params: {
   const question = await Question.findOne({ competitionId: comp._id, dayNumber, status: "PUBLISHED" }).lean();
   if (!question) throw new AppError("QUESTION_NOT_AVAILABLE");
   if (params.expectedQuestionId && params.expectedQuestionId !== String(question._id)) throw new AppError("QUESTION_EXPIRED");
-  if (!question.options.some((o) => o.id === params.optionId)) throw new AppError("INVALID_OPTION");
+  const multiSelect = correctIdsOf(question).length > 1;
+  const picked = [...new Set(params.optionIds?.length ? params.optionIds : params.optionId ? [params.optionId] : [])];
+  // Store in option order so "C,A" and "A,C" are the same answer.
+  const selectedIds = question.options.map((o) => o.id).filter((id) => picked.includes(id));
+  if (!picked.length || selectedIds.length !== picked.length) throw new AppError("INVALID_OPTION");
+  if (!multiSelect && selectedIds.length > 1) throw new AppError("INVALID_OPTION", "Choose exactly one option.");
 
   const window = getDayWindow(comp, dayNumber);
   if (at.getTime() < window.opensAt.getTime()) {
@@ -261,8 +274,8 @@ export async function submitAnswer(params: {
   }
 
   const { isCorrect, score } = scoreAnswer({
-    selectedOptionId: params.optionId,
-    correctOptionId: question.correctOptionId,
+    selectedOptionIds: selectedIds,
+    correctOptionIds: correctIdsOf(question),
     questionPoints: question.points,
     config: comp.scoring,
   });
@@ -286,7 +299,8 @@ export async function submitAnswer(params: {
             userId: params.userId,
             dayNumber,
             questionId: question._id,
-            selectedOptionId: params.optionId,
+            selectedOptionId: selectedIds[0],
+            selectedOptionIds: selectedIds,
             isCorrect,
             score,
             status: "ANSWERED",
@@ -309,7 +323,7 @@ export async function submitAnswer(params: {
   }
 
   // Note: the response is identical for correct and incorrect answers.
-  return { status: "ANSWERED", dayNumber, submittedAt: at.toISOString(), selectedOptionId: params.optionId };
+  return { status: "ANSWERED", dayNumber, submittedAt: at.toISOString(), selectedOptionId: selectedIds[0]!, selectedOptionIds: selectedIds };
 }
 
 export async function joinCurrentCompetition(userId: Types.ObjectId, at: Date = now()) {

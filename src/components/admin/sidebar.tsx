@@ -12,11 +12,13 @@ import {
   Trophy,
   Users,
   CalendarRange,
+  ExternalLink,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 const NAV = [
@@ -59,6 +61,21 @@ function NavLinks({ isSuper, onNavigate }: { isSuper: boolean; onNavigate?: () =
   );
 }
 
+function ViewSiteLink({ className, onNavigate }: { className?: string; onNavigate?: () => void }) {
+  return (
+    <div className={className}>
+      <Link
+        href="/"
+        onClick={onNavigate}
+        className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <ExternalLink className="size-4" aria-hidden />
+        View site
+      </Link>
+    </div>
+  );
+}
+
 export function AdminSidebar({ isSuper }: { isSuper: boolean }) {
   return (
     <aside className="hidden w-60 shrink-0 border-r bg-card lg:block">
@@ -72,6 +89,7 @@ export function AdminSidebar({ isSuper }: { isSuper: boolean }) {
         <nav aria-label="Admin">
           <NavLinks isSuper={isSuper} />
         </nav>
+        <ViewSiteLink className="mt-auto" />
       </div>
     </aside>
   );
@@ -79,6 +97,27 @@ export function AdminSidebar({ isSuper }: { isSuper: boolean }) {
 
 export function AdminMobileNav({ isSuper }: { isSuper: boolean }) {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+
+  // Close when the route changes (e.g. browser back).
+  const [lastPath, setLastPath] = useState(pathname);
+  if (pathname !== lastPath) {
+    setLastPath(pathname);
+    setOpen(false);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   return (
     <div className="lg:hidden">
       <button
@@ -90,20 +129,30 @@ export function AdminMobileNav({ isSuper }: { isSuper: boolean }) {
       >
         <Menu className="size-5" />
       </button>
-      {open && (
-        <div className="fixed inset-0 z-50 flex">
-          <button type="button" className="flex-1 bg-black/40" aria-label="Close navigation" onClick={() => setOpen(false)} />
-          <nav aria-label="Admin" className="order-first h-full w-72 overflow-y-auto border-r bg-card p-4 shadow-xl">
-            <div className="mb-4 flex items-center justify-between">
-              <span className="font-semibold">Quiz Admin</span>
-              <button type="button" onClick={() => setOpen(false)} className="rounded-lg p-2 hover:bg-muted" aria-label="Close navigation">
-                <X className="size-4" />
-              </button>
-            </div>
-            <NavLinks isSuper={isSuper} onNavigate={() => setOpen(false)} />
-          </nav>
-        </div>
-      )}
+      {/* Portalled to <body>: the sticky header uses backdrop-filter, which would otherwise
+          become the containing block for this fixed overlay and clip it to the header. */}
+      {open &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex lg:hidden">
+            <button type="button" className="flex-1 bg-black/40" aria-label="Close navigation" onClick={() => setOpen(false)} />
+            <nav aria-label="Admin" className="order-first flex h-dvh w-72 max-w-[85vw] flex-col overflow-y-auto border-r bg-card p-4 shadow-xl">
+              <div className="mb-4 flex items-center justify-between">
+                <span className="flex items-center gap-2 font-semibold">
+                  <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                    <Trophy className="size-4" aria-hidden />
+                  </span>
+                  Quiz Admin
+                </span>
+                <button type="button" onClick={() => setOpen(false)} className="rounded-lg p-2 hover:bg-muted" aria-label="Close navigation">
+                  <X className="size-4" />
+                </button>
+              </div>
+              <NavLinks isSuper={isSuper} onNavigate={() => setOpen(false)} />
+              <ViewSiteLink className="mt-4 border-t pt-4" onNavigate={() => setOpen(false)} />
+            </nav>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

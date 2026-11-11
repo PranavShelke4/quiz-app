@@ -2,9 +2,19 @@ import { z } from "zod";
 import { isValidLocalDate, isValidTimeZone } from "@/lib/time/zoned";
 import { TIE_BREAKERS } from "@/lib/leaderboard/ranking";
 
-export const OPTION_IDS = ["A", "B", "C", "D"] as const;
+export const OPTION_IDS = ["A", "B", "C", "D", "E", "F"] as const;
 export type OptionId = (typeof OPTION_IDS)[number];
-export const optionIdSchema = z.enum(OPTION_IDS, { error: "Choose one of options A–D" });
+export const optionIdSchema = z.enum(OPTION_IDS, { error: "Choose one of options A–F" });
+/** A question has between MIN_OPTIONS and MAX_OPTIONS options, lettered A, B, C… in order. */
+export const MIN_OPTIONS = 2;
+export const MAX_OPTIONS = OPTION_IDS.length;
+
+/** A set of distinct option ids (at least one). */
+const optionIdSetSchema = z
+  .array(optionIdSchema)
+  .min(1, "Select at least one correct option")
+  .max(MAX_OPTIONS)
+  .refine((ids) => new Set(ids).size === ids.length, "Duplicate option");
 
 export const DIFFICULTIES = ["EASY", "MEDIUM", "HARD"] as const;
 export type Difficulty = (typeof DIFFICULTIES)[number];
@@ -16,11 +26,14 @@ export const MAX_DURATION_DAYS = 90;
  * `isCorrect` or `userId` are stripped and never reach business logic.
  */
 export const submitAnswerSchema = z.object({
-  optionId: optionIdSchema,
+  /** Single-answer questions. */
+  optionId: optionIdSchema.optional(),
+  /** Multiple-answer questions ("select all that apply"). */
+  optionIds: optionIdSetSchema.optional(),
   // Optional guards so a stale tab can't submit to a different day than it displays.
   dayNumber: z.number().int().min(1).max(MAX_DURATION_DAYS).optional(),
   questionId: z.string().regex(/^[a-f0-9]{24}$/i).optional(),
-});
+}).refine((d) => d.optionId !== undefined || d.optionIds !== undefined, { path: ["optionId"], message: "Choose an option" });
 
 export const timezoneSchema = z.string().trim().refine(isValidTimeZone, "Unknown time zone");
 export const localDateSchema = z.string().refine(isValidLocalDate, "Use YYYY-MM-DD");
@@ -85,46 +98,63 @@ export const questionBaseSchema = z.object({
   questionText: z.string().trim().min(5, "Question text is required").max(1000),
   options: z
     .array(z.object({ id: optionIdSchema, text: optionTextSchema }))
-    .length(4, "Exactly 4 options are required")
-    .refine((opts) => OPTION_IDS.every((id, i) => opts[i]?.id === id), "Options must be A, B, C, D in order")
+    .min(MIN_OPTIONS, `At least ${MIN_OPTIONS} options are required`)
+    .max(MAX_OPTIONS, `At most ${MAX_OPTIONS} options are allowed`)
+    .refine((opts) => opts.every((o, i) => o.id === OPTION_IDS[i]), "Options must be lettered A, B, C… in order")
     .refine(
       (opts) => new Set(opts.map((o) => o.text.toLowerCase())).size === opts.length,
       "Options must be distinct",
     ),
-  correctOptionId: optionIdSchema,
+  /** Legacy single correct answer; prefer `correctOptionIds`. */
+  correctOptionId: optionIdSchema.optional(),
+  /** One or more correct options. With more than one, participants must select all of them. */
+  correctOptionIds: optionIdSetSchema.optional(),
   explanation: z.string().trim().max(2000).default(""),
   category: z.string().trim().max(60).default("General"),
   difficulty: z.enum(DIFFICULTIES).default("MEDIUM"),
   points: z.number().int().min(0).max(100).nullable().default(null),
 });
 
-export const createQuestionSchema = questionBaseSchema.extend({
-  status: z.enum(["DRAFT", "PUBLISHED"]).default("DRAFT"),
-});
+export const createQuestionSchema = questionBaseSchema
+  .extend({ status: z.enum(["DRAFT", "PUBLISHED"]).default("DRAFT") })
+  .refine((d) => d.correctOptionId !== undefined || d.correctOptionIds !== undefined, {
+    path: ["correctOptionIds"],
+    message: "Select at least one correct option",
+  });
 export const updateQuestionSchema = questionBaseSchema.omit({ competitionId: true }).partial();
 export type QuestionInput = z.infer<typeof questionBaseSchema>;
 
 export const correctionSchema = z
   .object({
     newCorrectOptionId: optionIdSchema.optional(),
+    newCorrectOptionIds: optionIdSetSchema.optional(),
     newPoints: z.number().int().min(0).max(100).nullable().optional(),
     reason: z.string().trim().min(10, "Please describe the reason (10+ characters)").max(1000),
   })
-  .refine((d) => d.newCorrectOptionId !== undefined || d.newPoints !== undefined, "Nothing to correct");
+  .refine((d) => d.newCorrectOptionId !== undefined || d.newCorrectOptionIds !== undefined || d.newPoints !== undefined, "Nothing to correct");
 
-/** CSV import row, keyed by the documented header names. */
+/** Accepts "A", "A,C", "A;C", "A|C", "A C" or "AC" → ["A", "C"]. */
+export function parseOptionIdList(raw: string): string[] {
+  const t = raw.trim().toUpperCase();
+  const parts = /[,;|\s]/.test(t) ? t.split(/[,;|\s]+/) : t.split("");
+  return parts.map((p) => p.trim()).filter(Boolean);
+}
+
+/** Import row (CSV or XML), keyed by the documented header names. optionC–optionF are optional. */
+const optionalOptionText = z.string().trim().max(300).optional().transform((v) => v || "");
 export const csvQuestionRowSchema = z.object({
   dayNumber: z.coerce.number({ error: "dayNumber must be a number" }).int().min(1).max(MAX_DURATION_DAYS),
   question: z.string().trim().min(5, "question is required").max(1000),
   optionA: optionTextSchema,
   optionB: optionTextSchema,
-  optionC: optionTextSchema,
-  optionD: optionTextSchema,
+  optionC: optionalOptionText,
+  optionD: optionalOptionText,
+  optionE: optionalOptionText,
+  optionF: optionalOptionText,
   correctOption: z
-    .string()
-    .trim()
-    .toUpperCase()
-    .pipe(optionIdSchema),
+    .string({ error: "correctOption is required" })
+    .transform((v) => parseOptionIdList(v))
+    .pipe(optionIdSetSchema),
   category: z.string().trim().max(60).optional().transform((v) => v || "General"),
   difficulty: z
     .string()
@@ -149,6 +179,9 @@ export const csvQuestionRowSchema = z.object({
   explanation: z.string().trim().max(2000).optional().transform((v) => v ?? ""),
 });
 
+/** Columns that must be present in a CSV import header. */
+export const CSV_REQUIRED_HEADERS = ["dayNumber", "question", "optionA", "optionB", "correctOption"] as const;
+
 export const CSV_IMPORT_HEADERS = [
   "dayNumber",
   "question",
@@ -156,6 +189,8 @@ export const CSV_IMPORT_HEADERS = [
   "optionB",
   "optionC",
   "optionD",
+  "optionE",
+  "optionF",
   "correctOption",
   "category",
   "difficulty",

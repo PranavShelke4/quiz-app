@@ -135,6 +135,7 @@ export default async function QuizPage() {
           question={today.question}
           status={today.status}
           selectedOptionId={today.status === "ANSWERED" ? today.selectedOptionId : undefined}
+          selectedOptionIds={today.status === "ANSWERED" ? today.selectedOptionIds : undefined}
           submittedAt={today.status === "ANSWERED" ? today.submittedAt : undefined}
           closesAt={today.closesAt}
           serverTime={c.serverTime}

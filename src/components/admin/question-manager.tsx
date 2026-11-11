@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Copy, Download, Eye, FileQuestion, Lock, Pencil, Plus, Rocket, Trash2, Upload, Wrench } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, Download, Eye, FileQuestion, Lock, Pencil, Plus, Rocket, Trash2, Upload, Wrench, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -11,10 +11,14 @@ import { Alert, Badge, Card, Checkbox, EmptyState, Field, Input, Select, Textare
 import { TBody, TD, TH, THead, TR, Table } from "@/components/ui/table";
 import { ApiClientError, api } from "@/lib/api/client";
 import { toCsv } from "@/lib/csv";
+import { XML_TEMPLATE, parseQuestionsXml } from "@/lib/question-xml";
 import type { AdminQuestionDTO } from "@/services/question.service";
 
-type OptionId = "A" | "B" | "C" | "D";
-const IDS: OptionId[] = ["A", "B", "C", "D"];
+type OptionId = "A" | "B" | "C" | "D" | "E" | "F";
+const IDS: OptionId[] = ["A", "B", "C", "D", "E", "F"];
+const MIN_OPTIONS = 2;
+const MAX_OPTIONS = IDS.length;
+const keyOf = (q: AdminQuestionDTO) => (q.correctOptionIds?.length ? q.correctOptionIds : [q.correctOptionId]) as OptionId[];
 
 interface CompInfo {
   id: string;
@@ -30,7 +34,7 @@ type Draft = {
   dayNumber: number;
   questionText: string;
   options: { id: OptionId; text: string }[];
-  correctOptionId: OptionId;
+  correctOptionIds: OptionId[];
   explanation: string;
   category: string;
   difficulty: "EASY" | "MEDIUM" | "HARD";
@@ -42,8 +46,8 @@ function emptyDraft(day: number): Draft {
   return {
     dayNumber: day,
     questionText: "",
-    options: IDS.map((id) => ({ id, text: "" })),
-    correctOptionId: "A",
+    options: IDS.slice(0, 4).map((id) => ({ id, text: "" })),
+    correctOptionIds: ["A"],
     explanation: "",
     category: "General",
     difficulty: "MEDIUM",
@@ -66,10 +70,24 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
   const [correcting, setCorrecting] = useState<AdminQuestionDTO | null>(null);
   const [importOpen, setImportOpen] = useState(() => params.get("import") === "1");
   const [dupFor, setDupFor] = useState<AdminQuestionDTO | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   const readOnly = comp.status === "COMPLETED" || comp.status === "ARCHIVED";
   const isLocked = (day: number) => readOnly || day <= comp.lockedThroughDay;
   const drafts = questions.filter((q) => q.status === "DRAFT" && !isLocked(q.dayNumber)).length;
+  // Deleting is only possible while the competition is a draft and the day hasn't opened.
+  const canDelete = (q: AdminQuestionDTO) => comp.status === "DRAFT" && !isLocked(q.dayNumber);
+  const deletable = questions.filter(canDelete);
+  const selectedIds = deletable.filter((q) => selected.has(q.id)).map((q) => q.id);
+  const allSelected = deletable.length > 0 && selectedIds.length === deletable.length;
+  const toggleOne = (id: string) =>
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   const swap = (a: AdminQuestionDTO, b: AdminQuestionDTO | undefined) => {
     if (!b) return toast.error("Both days need a question to swap. Edit the day number instead.");
@@ -84,13 +102,18 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
         </p>
         {!readOnly && (
           <div className="flex flex-wrap gap-2">
+            {selectedIds.length > 0 && (
+              <Button variant="danger" size="sm" onClick={() => setBulkDeleteOpen(true)}>
+                <Trash2 /> Delete {selectedIds.length} selected
+              </Button>
+            )}
             {drafts > 0 && (
               <Button variant="outline" size="sm" loading={pending === "publish-all"} onClick={() => fire("publish-all", "/api/admin/questions/publish-all", { body: { competitionId: comp.id } }, "Draft questions published.")}>
                 <Rocket /> Publish {drafts} draft{drafts === 1 ? "" : "s"}
               </Button>
             )}
             <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
-              <Upload /> Import CSV
+              <Upload /> Import CSV / XML
             </Button>
             <Button size="sm" disabled={!freeDays.length} onClick={() => setEditor({ draft: emptyDraft(freeDays[0]!) })}>
               <Plus /> Add question
@@ -103,12 +126,12 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
         <EmptyState
           icon={<FileQuestion />}
           title="No questions added yet."
-          description="Add your first question or import questions using CSV."
+          description="Add your first question or import questions from a CSV or XML file."
           action={
             !readOnly && (
               <div className="flex gap-2">
                 <Button onClick={() => setEditor({ draft: emptyDraft(1) })}><Plus /> Add question</Button>
-                <Button variant="outline" onClick={() => setImportOpen(true)}><Upload /> Import CSV</Button>
+                <Button variant="outline" onClick={() => setImportOpen(true)}><Upload /> Import CSV / XML</Button>
               </div>
             )
           }
@@ -118,11 +141,22 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
           <Table>
             <THead>
               <tr>
+                {comp.status === "DRAFT" && (
+                  <TH className="w-10">
+                    <Checkbox
+                      aria-label="Select all deletable questions"
+                      checked={allSelected}
+                      disabled={!deletable.length}
+                      onChange={(e) => setSelected(e.target.checked ? new Set(deletable.map((q) => q.id)) : new Set())}
+                    />
+                  </TH>
+                )}
                 <TH className="w-16">Day</TH>
                 <TH>Question</TH>
                 <TH className="hidden md:table-cell">Category</TH>
                 <TH className="hidden md:table-cell">Difficulty</TH>
                 <TH className="hidden sm:table-cell">Answer</TH>
+                <TH className="hidden sm:table-cell">Points</TH>
                 <TH>Status</TH>
                 <TH className="text-right">Actions</TH>
               </tr>
@@ -133,8 +167,9 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
                 if (!q) {
                   return (
                     <TR key={`empty-${day}`}>
+                      {comp.status === "DRAFT" && <TD />}
                       <TD className="tabular-nums text-muted-foreground">{day}</TD>
-                      <TD colSpan={5} className="text-sm text-muted-foreground">
+                      <TD colSpan={6} className="text-sm text-muted-foreground">
                         {isLocked(day) ? "No question (day has passed)" : "No question yet"}
                       </TD>
                       <TD className="text-right">
@@ -149,14 +184,26 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
                 }
                 const locked = isLocked(day);
                 return (
-                  <TR key={q.id}>
+                  <TR key={q.id} className={selected.has(q.id) ? "bg-primary-soft/40" : undefined}>
+                    {comp.status === "DRAFT" && (
+                      <TD>
+                        {canDelete(q) && <Checkbox aria-label={`Select day ${day}`} checked={selected.has(q.id)} onChange={() => toggleOne(q.id)} />}
+                      </TD>
+                    )}
                     <TD className="tabular-nums font-medium">{day}</TD>
                     <TD className="max-w-md">
                       <p className="line-clamp-2 text-sm">{q.questionText}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {q.options.length} options{keyOf(q).length > 1 ? " · multiple answers" : ""}
+                        <span className="sm:hidden"> · answer {keyOf(q).join(", ")} · {q.points ?? comp.pointsPerCorrectAnswer} pt</span>
+                      </p>
                     </TD>
                     <TD className="hidden md:table-cell"><Badge>{q.category}</Badge></TD>
                     <TD className="hidden text-xs md:table-cell">{q.difficulty}</TD>
-                    <TD className="hidden font-mono text-xs sm:table-cell">{q.correctOptionId}</TD>
+                    <TD className="hidden font-mono text-xs sm:table-cell">{keyOf(q).join(", ")}</TD>
+                    <TD className="hidden text-xs tabular-nums sm:table-cell">
+                      {q.points ?? <span className="text-muted-foreground">{comp.pointsPerCorrectAnswer} (default)</span>}
+                    </TD>
                     <TD>
                       <div className="flex items-center gap-1">
                         <Badge tone={q.status === "PUBLISHED" ? "success" : "warning"}>{q.status}</Badge>
@@ -174,7 +221,7 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
                           <>
                             <Button variant="ghost" size="icon" aria-label={`Move day ${day} earlier`} disabled={day === 1 || isLocked(day - 1)} onClick={() => swap(q, byDay.get(day - 1))}><ArrowUp /></Button>
                             <Button variant="ghost" size="icon" aria-label={`Move day ${day} later`} disabled={day === comp.durationDays} onClick={() => swap(q, byDay.get(day + 1))}><ArrowDown /></Button>
-                            <Button variant="ghost" size="icon" aria-label={`Edit day ${day}`} onClick={() => setEditor({ id: q.id, draft: { ...q, options: q.options as Draft["options"], correctOptionId: q.correctOptionId as OptionId, difficulty: q.difficulty as Draft["difficulty"], status: q.status as Draft["status"] } })}><Pencil /></Button>
+                            <Button variant="ghost" size="icon" aria-label={`Edit day ${day}`} onClick={() => setEditor({ id: q.id, draft: { dayNumber: q.dayNumber, questionText: q.questionText, explanation: q.explanation, category: q.category, points: q.points, options: q.options as Draft["options"], correctOptionIds: keyOf(q), difficulty: q.difficulty as Draft["difficulty"], status: q.status as Draft["status"] } })}><Pencil /></Button>
                             {q.status === "DRAFT" ? (
                               <Button variant="ghost" size="icon" aria-label={`Publish day ${day}`} title="Publish" onClick={() => fire(`pub-${q.id}`, `/api/admin/questions/${q.id}`, { body: { action: "publish" } }, "Question published.")}><Rocket /></Button>
                             ) : (
@@ -206,6 +253,7 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
         {preview && (
           <div className="space-y-4">
             <p className="text-lg font-semibold">{preview.questionText}</p>
+            {keyOf(preview).length > 1 && <p className="text-sm font-medium text-primary">Select all that apply — every correct option is needed to score.</p>}
             <div className="grid gap-2">
               {preview.options.map((o) => (
                 <div key={o.id} className="flex items-center gap-3 rounded-xl border px-4 py-3">
@@ -233,8 +281,25 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
         }}
       />
 
+      <ConfirmDialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        title={`Delete ${selectedIds.length} question${selectedIds.length === 1 ? "" : "s"}?`}
+        description="The selected questions are removed permanently. This action cannot be undone."
+        confirmLabel={`Delete ${selectedIds.length}`}
+        loadingLabel="Deleting…"
+        onConfirm={async () => {
+          const r = await fire<{ deleted: number }>("bulk-del", "/api/admin/questions/bulk-delete", { body: { competitionId: comp.id, ids: selectedIds } });
+          if (r) {
+            toast.success(`${r.deleted} question${r.deleted === 1 ? "" : "s"} deleted.`);
+            setSelected(new Set());
+            setBulkDeleteOpen(false);
+          }
+        }}
+      />
+
       {correcting && <CorrectionDialog q={correcting} onClose={() => setCorrecting(null)} />}
-      {importOpen && <ImportDialog comp={comp} onClose={() => setImportOpen(false)} />}
+      {importOpen && <ImportDialog comp={comp} freeDays={freeDays} onClose={() => setImportOpen(false)} />}
       {dupFor && <DuplicateDialog q={dupFor} freeDays={freeDays} onClose={() => setDupFor(null)} />}
     </div>
   );
@@ -247,6 +312,19 @@ function QuestionEditor({ comp, editor, freeDays, onClose }: { comp: CompInfo; e
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const days = editor.id ? [...new Set([editor.draft.dayNumber, ...freeDays])].sort((a, b) => a - b) : freeDays;
+
+  const setOptions = (options: Draft["options"], correctOptionIds: OptionId[]) => setD({ ...d, options, correctOptionIds });
+  const toggleCorrect = (id: OptionId) =>
+    setD({ ...d, correctOptionIds: d.correctOptionIds.includes(id) ? d.correctOptionIds.filter((x) => x !== id) : [...d.correctOptionIds, id] });
+  const addOption = () => setOptions([...d.options, { id: IDS[d.options.length]!, text: "" }], d.correctOptionIds);
+  // Removing an option re-letters the ones after it, and keeps the answer key pointing at the same texts.
+  const removeOption = (index: number) => {
+    const kept = d.options.filter((_, j) => j !== index);
+    const options = kept.map((o, k) => ({ id: IDS[k]!, text: o.text }));
+    const correct = kept.flatMap((o, k) => (d.correctOptionIds.includes(o.id) ? [IDS[k]!] : []));
+    setOptions(options, correct);
+  };
+  const trueFalse = () => setOptions([{ id: "A", text: "True" }, { id: "B", text: "False" }], ["A"]);
 
   async function save() {
     setBusy(true);
@@ -301,7 +379,7 @@ function QuestionEditor({ comp, editor, freeDays, onClose }: { comp: CompInfo; e
               <option value="HARD">Hard</option>
             </Select>
           </Field>
-          <Field id="q-points" label="Points" hint={`Blank = default (${comp.pointsPerCorrectAnswer})`} error={errors.points}>
+          <Field id="q-points" label="Points for this question" hint={`Blank = competition default (${comp.pointsPerCorrectAnswer})`} error={errors.points}>
             <Input id="q-points" type="number" min={0} max={100} value={d.points ?? ""} onChange={(e) => setD({ ...d, points: e.target.value === "" ? null : Number(e.target.value) })} />
           </Field>
         </div>
@@ -309,17 +387,31 @@ function QuestionEditor({ comp, editor, freeDays, onClose }: { comp: CompInfo; e
           <Textarea id="q-text" value={d.questionText} onChange={(e) => setD({ ...d, questionText: e.target.value })} maxLength={1000} />
         </Field>
         <fieldset className="space-y-2">
-          <legend className="text-sm font-medium">Options — select the correct one</legend>
+          <legend className="text-sm font-medium">Options — tick every correct answer</legend>
+          <p className="text-xs text-muted-foreground">
+            {MIN_OPTIONS}–{MAX_OPTIONS} options. Tick more than one to make it a &ldquo;select all that apply&rdquo; question — participants must pick every correct option to score.
+          </p>
           {errors.options && <p className="text-xs text-danger">{errors.options[0]}</p>}
+          {errors.correctOptionIds && <p className="text-xs text-danger">{errors.correctOptionIds[0]}</p>}
           {d.options.map((o, i) => (
             <div key={o.id} className="flex items-center gap-2">
-              <label className="flex items-center gap-2 text-sm font-semibold">
-                <input type="radio" name="correct" checked={d.correctOptionId === o.id} onChange={() => setD({ ...d, correctOptionId: o.id })} className="size-4 accent-[var(--primary)]" aria-label={`Option ${o.id} is correct`} />
+              <label className="flex shrink-0 items-center gap-2 text-sm font-semibold">
+                <input type="checkbox" checked={d.correctOptionIds.includes(o.id)} onChange={() => toggleCorrect(o.id)} className="size-4 accent-[var(--primary)]" aria-label={`Option ${o.id} is correct`} />
                 {o.id}
               </label>
               <Input aria-label={`Option ${o.id} text`} value={o.text} maxLength={300} onChange={(e) => setD({ ...d, options: d.options.map((x, j) => (j === i ? { ...x, text: e.target.value } : x)) })} />
+              <Button variant="ghost" size="icon" aria-label={`Remove option ${o.id}`} disabled={d.options.length <= MIN_OPTIONS} onClick={() => removeOption(i)}>
+                <X />
+              </Button>
             </div>
           ))}
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button variant="outline" size="sm" disabled={d.options.length >= MAX_OPTIONS} onClick={addOption}>
+              <Plus /> Add option
+            </Button>
+            <Button variant="ghost" size="sm" onClick={trueFalse}>True / False</Button>
+          </div>
+          {d.correctOptionIds.length === 0 && <p className="text-xs text-warning">Tick at least one correct option.</p>}
         </fieldset>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field id="q-cat" label="Category" error={errors.category}>
@@ -344,12 +436,14 @@ function QuestionEditor({ comp, editor, freeDays, onClose }: { comp: CompInfo; e
 
 function CorrectionDialog({ q, onClose }: { q: AdminQuestionDTO; onClose: () => void }) {
   const { run } = useAction();
-  const [correct, setCorrect] = useState(q.correctOptionId as OptionId);
+  const original = keyOf(q);
+  const [correct, setCorrect] = useState<OptionId[]>(original);
   const [points, setPoints] = useState<string>(q.points === null ? "" : String(q.points));
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const newPoints = points === "" ? null : Number(points);
-  const changed = correct !== q.correctOptionId || newPoints !== q.points;
+  const keyChanged = [...correct].sort().join() !== [...original].sort().join();
+  const changed = (keyChanged && correct.length > 0) || newPoints !== q.points;
 
   return (
     <Dialog
@@ -369,7 +463,7 @@ function CorrectionDialog({ q, onClose }: { q: AdminQuestionDTO; onClose: () => 
               setBusy(true);
               try {
                 const res = await run<{ affectedAnswers: number }>("correct", `/api/admin/questions/${q.id}/correction`, {
-                  body: { reason, ...(correct !== q.correctOptionId ? { newCorrectOptionId: correct } : {}), ...(newPoints !== q.points ? { newPoints } : {}) },
+                  body: { reason, ...(keyChanged ? { newCorrectOptionIds: correct } : {}), ...(newPoints !== q.points ? { newPoints } : {}) },
                 });
                 toast.success(`Correction applied. ${res?.affectedAnswers ?? 0} answers recalculated.`);
                 onClose();
@@ -387,11 +481,19 @@ function CorrectionDialog({ q, onClose }: { q: AdminQuestionDTO; onClose: () => 
     >
       <div className="space-y-4">
         <p className="text-sm font-medium">{q.questionText}</p>
-        <Field id="c-correct" label={`Correct option (currently ${q.correctOptionId})`}>
-          <Select id="c-correct" value={correct} onChange={(e) => setCorrect(e.target.value as OptionId)}>
-            {q.options.map((o) => <option key={o.id} value={o.id}>{o.id}. {o.text}</option>)}
-          </Select>
-        </Field>
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium">Correct option(s) (currently {original.join(", ")})</legend>
+          {q.options.map((o) => (
+            <label key={o.id} className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={correct.includes(o.id as OptionId)}
+                onChange={() => setCorrect((cur) => (cur.includes(o.id as OptionId) ? cur.filter((x) => x !== o.id) : [...cur, o.id as OptionId]))}
+              />
+              <span className="font-semibold">{o.id}.</span> {o.text}
+            </label>
+          ))}
+          {correct.length === 0 && <p className="text-xs text-warning">Tick at least one correct option.</p>}
+        </fieldset>
         <Field id="c-points" label={`Points (currently ${q.points ?? "default"})`} hint="Blank = competition default">
           <Input id="c-points" type="number" min={0} max={100} value={points} onChange={(e) => setPoints(e.target.value)} />
         </Field>
@@ -441,11 +543,20 @@ interface ImportReport {
   imported: number;
 }
 
-const TEMPLATE = "dayNumber,question,optionA,optionB,optionC,optionD,correctOption,category,difficulty,points,explanation\n1,What is the capital of France?,Paris,Rome,Berlin,Madrid,A,Geography,EASY,1,Paris has been France's capital since 508 AD.\n";
+const TEMPLATE = [
+  "dayNumber,question,optionA,optionB,optionC,optionD,optionE,optionF,correctOption,category,difficulty,points,explanation",
+  "1,What is the capital of France?,Paris,Rome,Berlin,Madrid,,,A,Geography,EASY,1,Paris has been France's capital since 508 AD.",
+  "2,The Sun is a star.,True,False,,,,,A,Science,EASY,1,",
+  "3,Which of these countries are in Europe?,Spain,Brazil,Poland,Kenya,,,A;C,Geography,MEDIUM,3,Select all that apply.",
+  "",
+].join("\n");
 
-function ImportDialog({ comp, onClose }: { comp: CompInfo; onClose: () => void }) {
+const looksLikeXml = (text: string) => text.trimStart().startsWith("<");
+
+function ImportDialog({ comp, freeDays, onClose }: { comp: CompInfo; freeDays: number[]; onClose: () => void }) {
   const router = useRouter();
   const [csv, setCsv] = useState("");
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [report, setReport] = useState<ImportReport | null>(null);
   const [opts, setOpts] = useState({ publish: false, overwrite: false, skipInvalid: false });
   const [busy, setBusy] = useState<"validate" | "import" | null>(null);
@@ -455,7 +566,21 @@ function ImportDialog({ comp, onClose }: { comp: CompInfo; onClose: () => void }
     setBusy(dryRun ? "validate" : "import");
     setError(null);
     try {
-      const r = await api<ImportReport>("/api/admin/questions/import", { body: { competitionId: comp.id, csv, dryRun, ...opts } });
+      let payload: { csv: string } | { records: Record<string, string>[] };
+      if (looksLikeXml(csv)) {
+        try {
+          const parsed = parseQuestionsXml(csv, freeDays);
+          setWarnings(parsed.warnings);
+          payload = { records: parsed.records };
+        } catch (e) {
+          setError((e as Error).message);
+          return;
+        }
+      } else {
+        setWarnings([]);
+        payload = { csv };
+      }
+      const r = await api<ImportReport>("/api/admin/questions/import", { body: { competitionId: comp.id, ...payload, dryRun, ...opts } });
       setReport(r);
       if (!dryRun) {
         toast.success(`${r.imported} question${r.imported === 1 ? "" : "s"} imported.`);
@@ -473,7 +598,7 @@ function ImportDialog({ comp, onClose }: { comp: CompInfo; onClose: () => void }
   }
 
   function download(name: string, content: string) {
-    const url = URL.createObjectURL(new Blob([content], { type: "text/csv" }));
+    const url = URL.createObjectURL(new Blob([content], { type: name.endsWith(".xml") ? "application/xml" : "text/csv" }));
     const a = document.createElement("a");
     a.href = url;
     a.download = name;
@@ -488,7 +613,7 @@ function ImportDialog({ comp, onClose }: { comp: CompInfo; onClose: () => void }
       open
       side="right"
       onClose={onClose}
-      title="Import questions from CSV"
+      title="Import questions from CSV or XML"
       description={`Into ${comp.name}. The whole file is validated first; nothing is imported unless every row is valid (unless you opt in to skipping invalid rows).`}
       footer={
         <>
@@ -506,7 +631,7 @@ function ImportDialog({ comp, onClose }: { comp: CompInfo; onClose: () => void }
             <Upload className="size-4" aria-hidden /> Choose file
             <input
               type="file"
-              accept=".csv,text/csv"
+              accept=".csv,.xml,text/csv,text/xml,application/xml"
               className="sr-only"
               onChange={async (e) => {
                 const f = e.target.files?.[0];
@@ -514,12 +639,20 @@ function ImportDialog({ comp, onClose }: { comp: CompInfo; onClose: () => void }
                 if (f.size > 1_400_000) return toast.error("File is too large (max ~1.4 MB).");
                 setCsv(await f.text());
                 setReport(null);
+                setWarnings([]);
+                setError(null);
+                e.target.value = ""; // allow re-choosing the same file after editing it
               }}
             />
           </label>
-          <Button variant="ghost" size="sm" onClick={() => download("questions-template.csv", TEMPLATE)}><Download /> Template</Button>
+          <Button variant="ghost" size="sm" onClick={() => download("questions-template.csv", TEMPLATE)}><Download /> CSV template</Button>
+          <Button variant="ghost" size="sm" onClick={() => download("questions-template.xml", XML_TEMPLATE)}><Download /> XML template</Button>
         </div>
-        <Field id="csv" label="CSV content" hint="Columns: dayNumber, question, optionA–D, correctOption (A–D), category, difficulty (EASY/MEDIUM/HARD), points, explanation (optional)">
+        <Field
+          id="csv"
+          label={looksLikeXml(csv) ? "XML content" : "CSV or XML content"}
+          hint="CSV columns: dayNumber, question, optionA, optionB (required), optionC–optionF (optional), correctOption (e.g. A, or A;C for several correct answers), category, difficulty (EASY/MEDIUM/HARD), points, explanation. XML: see the XML template — Moodle XML exports also work."
+        >
           <Textarea id="csv" value={csv} onChange={(e) => { setCsv(e.target.value); setReport(null); }} className="min-h-40 font-mono text-xs" />
         </Field>
         <div className="space-y-2 text-sm">
@@ -528,6 +661,13 @@ function ImportDialog({ comp, onClose }: { comp: CompInfo; onClose: () => void }
           <label className="flex items-center gap-2"><Checkbox checked={opts.skipInvalid} onChange={(e) => setOpts({ ...opts, skipInvalid: e.target.checked })} /> Import valid rows even if some rows have errors</label>
         </div>
         {error && <Alert tone="danger">{error}</Alert>}
+        {warnings.length > 0 && (
+          <Alert tone="warning">
+            <ul className="list-disc space-y-1 pl-4 text-xs">
+              {warnings.map((w) => <li key={w}>{w}</li>)}
+            </ul>
+          </Alert>
+        )}
         {report && (
           <div className="space-y-3 rounded-xl border p-4">
             <div className="flex flex-wrap gap-4 text-sm">

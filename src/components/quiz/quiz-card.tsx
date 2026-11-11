@@ -17,6 +17,7 @@ interface Props {
   question: UserQuestionDTO;
   status: "OPEN" | "ANSWERED";
   selectedOptionId?: OptionId;
+  selectedOptionIds?: OptionId[];
   submittedAt?: string;
   closesAt: string;
   serverTime: string;
@@ -33,7 +34,12 @@ interface Props {
 export function QuizCard(props: Props) {
   const router = useRouter();
   const groupId = useId();
-  const [selected, setSelected] = useState<OptionId | null>(props.selectedOptionId ?? null);
+  const multi = props.question.multiSelect;
+  const [selected, setSelected] = useState<OptionId[]>(
+    props.selectedOptionIds?.length ? props.selectedOptionIds : props.selectedOptionId ? [props.selectedOptionId] : [],
+  );
+  const toggle = (id: OptionId) =>
+    setSelected((cur) => (multi ? (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]) : [id]));
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(props.status === "ANSWERED");
   const [error, setError] = useState<string | null>(null);
@@ -41,12 +47,12 @@ export function QuizCard(props: Props) {
   const locked = submitted || !props.canSubmit;
 
   async function submit() {
-    if (!selected || submitting || locked) return;
+    if (!selected.length || submitting || locked) return;
     setSubmitting(true);
     setError(null);
     try {
       const res = await api<{ submittedAt: string }>("/api/quiz/submit", {
-        body: { optionId: selected, dayNumber: props.question.dayNumber, questionId: props.question.id },
+        body: { ...(multi ? { optionIds: selected } : { optionId: selected[0] }), dayNumber: props.question.dayNumber, questionId: props.question.id },
       });
       submittedAtRef.current = res.submittedAt;
       setSubmitted(true);
@@ -91,13 +97,16 @@ export function QuizCard(props: Props) {
       </div>
 
       <div className="space-y-5 p-5 sm:p-6">
-        <h2 id={`${groupId}-q`} className="text-lg font-semibold leading-snug sm:text-xl">
-          {q.questionText}
-        </h2>
+        <div className="space-y-1.5">
+          <h2 id={`${groupId}-q`} className="text-lg font-semibold leading-snug sm:text-xl">
+            {q.questionText}
+          </h2>
+          {multi && <p className="text-sm font-medium text-primary">Select all that apply — every correct option is needed to score.</p>}
+        </div>
 
-        <div role="radiogroup" aria-labelledby={`${groupId}-q`} aria-disabled={locked || undefined} className="grid gap-2.5">
+        <div role={multi ? "group" : "radiogroup"} aria-labelledby={`${groupId}-q`} aria-disabled={locked || undefined} className="grid gap-2.5">
           {q.options.map((o) => {
-            const isSelected = selected === o.id;
+            const isSelected = selected.includes(o.id);
             return (
               <label
                 key={o.id}
@@ -110,18 +119,19 @@ export function QuizCard(props: Props) {
                 )}
               >
                 <input
-                  type="radio"
+                  type={multi ? "checkbox" : "radio"}
                   name={groupId}
                   value={o.id}
                   checked={isSelected}
                   disabled={locked}
-                  onChange={() => setSelected(o.id)}
+                  onChange={() => toggle(o.id)}
                   className="sr-only"
                 />
                 <span
                   aria-hidden
                   className={cn(
-                    "flex size-8 shrink-0 items-center justify-center rounded-lg border text-sm font-semibold",
+                    "flex size-8 shrink-0 items-center justify-center border text-sm font-semibold",
+                    multi ? "rounded-md" : "rounded-lg",
                     isSelected ? "border-primary bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
                   )}
                 >
@@ -148,7 +158,7 @@ export function QuizCard(props: Props) {
         ) : (
           // Sticky on mobile so the primary action is always reachable.
           <div className="sticky bottom-0 -mx-5 border-t bg-card/95 px-5 py-3 backdrop-blur sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0">
-            <Button size="lg" className="w-full sm:w-auto" onClick={submit} disabled={!selected || locked} loading={submitting} loadingText="Submitting…">
+            <Button size="lg" className="w-full sm:w-auto" onClick={submit} disabled={!selected.length || locked} loading={submitting} loadingText="Submitting…">
               Submit Answer
             </Button>
             <p className="mt-2 text-xs text-muted-foreground">You can submit only once. Answers can&apos;t be changed.</p>

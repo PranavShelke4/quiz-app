@@ -15,6 +15,7 @@ export const POST = apiRoute(
     return submitAnswer({
       userId: ctx.auth.userId,
       optionId: input.optionId,
+      optionIds: input.optionIds,
       expectedDayNumber: input.dayNumber,
       expectedQuestionId: input.questionId,
       sessionId: ctx.auth.session.id,
