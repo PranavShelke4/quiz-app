@@ -11,7 +11,7 @@ import { DailyAnswer } from "@/models/DailyAnswer";
 import { Question } from "@/models/Question";
 import { QuizAttempt } from "@/models/QuizAttempt";
 import { SuspicionFlag } from "@/models/SuspicionFlag";
-import { call, correctFor, createRunningCompetition, createUser, dayMiddle, joinComp, sessionCookieFor, setNow } from "../helpers/fixtures";
+import { call, cookieFromResponse, correctFor, createRunningCompetition, createUser, dayMiddle, joinComp, sessionCookieFor, setNow } from "../helpers/fixtures";
 
 async function timedCompetition(overrides: Partial<AntiCheatSettings> = {}) {
   const comp = await createRunningCompetition({ startOffsetDays: -1, durationDays: 3 });
@@ -187,5 +187,31 @@ describe("Anti-cheat: timed attempts", () => {
     const res = await call(updateCompetitionRoute, { cookie, method: "PATCH", params: { id: String(comp._id) }, body: { antiCheat: { ...ANTICHEAT_DEFAULTS, timeLimitSeconds: 45 } } });
     expect(res.status).toBe(200);
     expect((await Competition.findById(comp._id).lean())!.antiCheat).toMatchObject({ enabled: true, timeLimitSeconds: 45 });
+  });
+});
+
+describe("Anti-cheat: session rotation", () => {
+  it("keeps a timed attempt alive when the session cookie rotates between Start and Submit", async () => {
+    const comp = await timedCompetition();
+    const user = await createUser();
+    await joinComp(comp, user._id);
+    const t0 = dayMiddle(comp, 1);
+    // Signed in more than a day ago, so the next API call rotates the session.
+    setNow(new Date(t0.getTime() - 25 * 3_600_000));
+    const oldCookie = await sessionCookieFor(user._id);
+    setNow(t0);
+
+    const started = await call(startRoute, { cookie: oldCookie, body: {} });
+    expect(started.status).toBe(200);
+    const rotated = cookieFromResponse(started.headers);
+    expect(rotated).toBeTruthy();
+    expect(rotated).not.toBe(oldCookie);
+
+    setNow(new Date(t0.getTime() + 5_000));
+    const pick = await correctDisplayId(comp, started.json.data.question.options);
+    const res = await call(submitRoute, { cookie: rotated!, body: { optionId: pick } });
+    expect(res.status).toBe(200);
+    expect((await QuizAttempt.findOne({ userId: user._id }).lean())!.status).toBe("SUBMITTED");
+    expect(await SuspicionFlag.countDocuments({ userId: user._id, type: "ATTEMPT_LOCKED" })).toBe(0);
   });
 });

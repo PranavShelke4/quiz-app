@@ -18,7 +18,7 @@ export const metadata: Metadata = { title: "Today's quiz" };
 export default async function QuizPage() {
   const auth = await requireUser("/quiz");
   // The session lets the server tell a reload (same browser) from a second device.
-  const state = await getQuizState(auth.userId, undefined, { sessionId: auth.session.id });
+  const state = await getQuizState(auth.userId, undefined, { sessionId: auth.session.familyId });
   const c = state.competition;
 
   if (!c) {

@@ -6,5 +6,5 @@ import { startAttempt } from "@/services/attempt.service";
  * The question text is never sent before this call in anti-cheat mode.
  */
 export const POST = apiRoute("user", { rateLimit: { name: "attempt-start", limit: 10, windowMs: 60_000, by: "user" }, maxBodyBytes: 256 }, async (ctx) =>
-  startAttempt({ userId: ctx.auth.userId, sessionId: ctx.auth.session.id, meta: ctx.meta }),
+  startAttempt({ userId: ctx.auth.userId, sessionId: ctx.auth.session.familyId, meta: ctx.meta }),
 );

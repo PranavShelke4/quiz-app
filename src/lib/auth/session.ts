@@ -36,7 +36,14 @@ export interface SessionUser {
 export interface AuthContext {
   user: SessionUser;
   userId: Types.ObjectId;
-  session: { id: Types.ObjectId; kind: SessionKind; createdAt: Date; absoluteExpiresAt: Date };
+  session: {
+    id: Types.ObjectId;
+    /** Stable across rotations: use this (not `id`) to tell "this browser" from another device. */
+    familyId: Types.ObjectId;
+    kind: SessionKind;
+    createdAt: Date;
+    absoluteExpiresAt: Date;
+  };
 }
 
 export interface CookieToSet {
@@ -95,6 +102,8 @@ export async function createSession(params: {
   meta?: Pick<RequestMeta, "ip" | "userAgent"> | null;
   /** Keep an existing absolute expiry (used by rotation). */
   absoluteExpiresAt?: Date;
+  /** Rotation chain the new session belongs to (used by rotation). */
+  familyId?: Types.ObjectId;
 }): Promise<{ token: string; cookie: CookieToSet; sessionId: Types.ObjectId }> {
   await connectDb();
   const token = randomToken(32);
@@ -111,6 +120,7 @@ export async function createSession(params: {
       lastSeenAt: t,
       expiresAt,
       absoluteExpiresAt,
+      familyId: params.familyId ?? null,
       ip: params.meta?.ip ?? null,
       userAgent: params.meta?.userAgent ?? null,
     },
@@ -157,6 +167,7 @@ export async function validateSessionToken(token: string | undefined | null): Pr
     userId: user._id,
     session: {
       id: session._id,
+      familyId: session.familyId ?? session._id,
       kind: session.kind,
       createdAt: session.createdAt,
       absoluteExpiresAt: session.absoluteExpiresAt,
@@ -182,6 +193,7 @@ export async function rotateSessionIfDue(
     kind: auth.session.kind,
     meta,
     absoluteExpiresAt: auth.session.absoluteExpiresAt,
+    familyId: auth.session.familyId,
   });
   return created.cookie;
 }

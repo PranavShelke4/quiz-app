@@ -23,7 +23,8 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   retries: process.env.CI ? 1 : 0,
   reporter: [["list"]],
-  use: { baseURL, trace: "retain-on-failure" },
+  // SLOWMO=600 pnpm test:e2e --headed  → watch each step in a visible browser.
+  use: { baseURL, trace: "retain-on-failure", launchOptions: { slowMo: Number(process.env.SLOWMO ?? 0) } },
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] } },
     { name: "mobile", use: { ...devices["Pixel 7"] } },
