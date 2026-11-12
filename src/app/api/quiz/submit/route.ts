@@ -18,7 +18,7 @@ export const POST = apiRoute(
       optionIds: input.optionIds,
       expectedDayNumber: input.dayNumber,
       expectedQuestionId: input.questionId,
-      sessionId: ctx.auth.session.id,
+      sessionId: ctx.auth.session.familyId,
       meta: ctx.meta,
     });
   },

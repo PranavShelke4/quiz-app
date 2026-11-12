@@ -18,6 +18,12 @@ export interface ISession {
   absoluteExpiresAt: Date;
   revokedAt: Date | null;
   rotatedAt: Date | null;
+  /**
+   * The first session of a rotation chain. Rotation mints a new session (new _id) every
+   * 24h; this stays the same, so "same browser sign-in" checks survive rotation.
+   * Null on sessions created before this field existed (their own _id is the family).
+   */
+  familyId: Types.ObjectId | null;
   ip: string | null;
   userAgent: string | null;
 }
@@ -33,6 +39,7 @@ const SessionSchema = new Schema<ISession>(
     absoluteExpiresAt: { type: Date, required: true },
     revokedAt: { type: Date, default: null },
     rotatedAt: { type: Date, default: null },
+    familyId: { type: Schema.Types.ObjectId, default: null },
     ip: { type: String, default: null },
     userAgent: { type: String, default: null, maxlength: 400 },
   },

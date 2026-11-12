@@ -9,5 +9,5 @@ import { recordAttemptEvent } from "@/services/attempt.service";
  */
 export const POST = apiRoute("user", { rateLimit: { name: "attempt-event", limit: 60, windowMs: 60_000, by: "user" }, maxBodyBytes: 512 }, async (ctx) => {
   const input = await ctx.body(attemptEventSchema);
-  return recordAttemptEvent({ userId: ctx.auth.userId, sessionId: ctx.auth.session.id, type: input.type });
+  return recordAttemptEvent({ userId: ctx.auth.userId, sessionId: ctx.auth.session.familyId, type: input.type });
 });

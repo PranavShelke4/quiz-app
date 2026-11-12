@@ -103,6 +103,8 @@ test("full 3-day competition journey", async ({ page, request }, testInfo) => {
   await page.goto("/dashboard");
   await expect(page.getByText("Day 1 / 3").first()).toBeVisible();
   await page.goto("/quiz");
+  // Questions are only shown to participants.
+  await page.getByRole("button", { name: "Join the Competition" }).click();
   await expect(page.getByText("Which planet is known as the Red Planet?")).toBeVisible();
   await page.getByText("Mars", { exact: true }).click();
   await page.getByRole("button", { name: "Submit Answer" }).click();

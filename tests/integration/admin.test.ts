@@ -127,12 +127,13 @@ describe("Admin: competition + question workflow", () => {
   });
 
   it("exports answers as CSV (server-side, permission checked, formula-safe)", async () => {
-    const cookie = await adminCookie();
     const comp = await createRunningCompetition({ startOffsetDays: -1, durationDays: 2 });
     const player = await createUser({ name: "=cmd|' /C calc'!A0" });
     await joinComp(comp, player._id);
     setNow(dayMiddle(comp, 2));
     await call(submitRoute, { cookie: await sessionCookieFor(player._id), body: { optionId: correctFor(2) } });
+    // Created after moving the clock: ADMIN sessions have a short idle lifetime.
+    const cookie = await adminCookie();
     const res = await call(exportAnswersRoute, { cookie, url: `/api/admin/answers/export?competitionId=${comp._id}` });
     expect(res.headers.get("content-type")).toContain("text/csv");
     expect(res.text).toContain("User,Email,Competition,Day");
