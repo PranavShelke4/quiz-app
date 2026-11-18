@@ -17,6 +17,7 @@
     "seed:questions": "tsx --env-file-if-exists=.env.local scripts/add-test-questions.ts",
     "create-admin": "tsx --env-file-if-exists=.env.local scripts/create-admin.ts",
     "cron:run": "tsx --env-file-if-exists=.env.local scripts/run-cron.ts",
+    "grant-attendance": "tsx --env-file-if-exists=.env.local scripts/grant-day-attendance.ts",
     "db:memory": "tsx scripts/dev-memory-db.ts"
   },
   "dependencies": {
