@@ -1,0 +1,52 @@
+# Manually-run operator fix: marks specific participants as having answered one day
+# correctly (scripts/grant-day-attendance.ts). Dry run unless "apply" is ticked.
+# Requires repo secrets: MONGODB_URI, MONGODB_DB, AUTH_SECRET (same values as production).
+name: Grant day attendance
+
+on:
+  workflow_dispatch:
+    inputs:
+      competition:
+        description: "Competition id, slug or name"
+        required: true
+        default: "compton"
+      day:
+        description: "Day number"
+        required: true
+        default: "1"
+      emails:
+        description: "Comma-separated participant emails"
+        required: true
+      apply:
+        description: "Write to the database (unticked = dry run)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run script
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGODB_DB: ${{ secrets.MONGODB_DB }}
+          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
+          COMPETITION: ${{ inputs.competition }}
+          DAY: ${{ inputs.day }}
+          EMAILS: ${{ inputs.emails }}
+          APPLY: ${{ inputs.apply }}
+        run: |
+          args=(--competition "$COMPETITION" --day "$DAY" --emails "$EMAILS")
+          if [ "$APPLY" = "true" ]; then args+=(--apply); fi
+          pnpm exec tsx scripts/grant-day-attendance.ts "${args[@]}"
