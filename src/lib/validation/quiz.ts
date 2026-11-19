@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { isValidLocalDate, isValidTimeZone } from "@/lib/time/zoned";
+import { HOLIDAY_RULES } from "@/lib/competition/schedule";
 import { TIE_BREAKERS } from "@/lib/leaderboard/ranking";
 import { ATTEMPT_EVENTS, MAX_TIME_LIMIT_SECONDS, MIN_TIME_LIMIT_SECONDS } from "@/lib/quiz/anticheat-config";
 
@@ -79,6 +80,11 @@ export const antiCheatSchema = z.object({
   flagFastAnswers: z.boolean().default(true),
 });
 
+/** Starting a timed attempt; dayNumber is only needed for an operator-granted make-up day. */
+export const startAttemptSchema = z.object({
+  dayNumber: z.number().int().min(1).max(MAX_DURATION_DAYS).optional(),
+});
+
 export const attemptEventSchema = z.object({
   type: z.enum(ATTEMPT_EVENTS),
   dayNumber: z.number().int().min(1).max(MAX_DURATION_DAYS).optional(),
@@ -97,6 +103,7 @@ export const competitionBaseSchema = z.object({
     .trim()
     .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm (e.g. 18:00)")
     .optional(),
+  holidayRule: z.enum(HOLIDAY_RULES).optional(),
   slug: z
     .string()
     .trim()

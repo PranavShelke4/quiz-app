@@ -88,7 +88,54 @@ export default async function QuizPage() {
         <Progress value={((c.currentDay ?? 0) / c.durationDays) * 100} label="Competition progress" />
       </header>
 
-      {today.status === "UPCOMING" ? (
+      {state.makeup && (
+        <section className="space-y-3" aria-label="Catch-up question">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold">
+              Catch-up: Day {state.makeup.dayNumber}
+              {state.makeup.remaining > 1 && <span className="font-normal text-muted-foreground"> · {state.makeup.remaining} catch-up days left</span>}
+            </h2>
+            <p className="text-sm text-muted-foreground">This earlier day has been re-opened for you. The same timer and rules apply, and you get one attempt.</p>
+          </div>
+          {state.makeup.status === "READY" ? (
+            <TimedQuiz
+              key={`makeup-ready-${state.makeup.dayNumber}`}
+              mode="READY"
+              makeup
+              info={state.makeup.info}
+              antiCheat={state.makeup.antiCheat}
+              dayNumber={state.makeup.dayNumber}
+              closesAt={state.makeup.closesAt}
+              watermark={watermark}
+              nextQuestionLabel={null}
+            />
+          ) : (
+            <TimedQuiz
+              key={`makeup-run-${state.makeup.dayNumber}`}
+              mode="IN_PROGRESS"
+              started={{ question: state.makeup.question, deadlineAt: state.makeup.deadlineAt, serverTime: c.serverTime }}
+              antiCheat={state.makeup.antiCheat}
+              closesAt={state.makeup.closesAt}
+              watermark={watermark}
+              nextQuestionLabel={null}
+            />
+          )}
+        </section>
+      )}
+
+      {today.status === "UPCOMING" && c.holidayToday ? (
+        <Card className="text-center p-8 space-y-4">
+          <CalendarClock className="mx-auto size-12 text-primary" aria-hidden />
+          <h2 className="text-2xl font-semibold">Today is a holiday</h2>
+          <p className="text-muted-foreground">
+            There&apos;s no question today. Day {c.currentDay} opens on{" "}
+            {new Intl.DateTimeFormat("en-US", { timeZone: c.timezone, weekday: "long", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date(today.opensAt))}.
+          </p>
+          <div className="pt-2 flex justify-center">
+            <Countdown target={today.opensAt} serverTime={c.serverTime} />
+          </div>
+        </Card>
+      ) : today.status === "UPCOMING" ? (
         <Card className="text-center p-8 space-y-4">
           <Clock className="mx-auto size-12 text-primary" aria-hidden />
           <h2 className="text-2xl font-semibold">Today&apos;s Quiz Opens at {new Intl.DateTimeFormat("en-US", { timeZone: c.timezone, hour: "numeric", minute: "2-digit" }).format(new Date(today.opensAt))}</h2>

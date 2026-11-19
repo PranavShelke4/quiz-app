@@ -21,6 +21,11 @@ export interface ICompetitionParticipant {
   longestStreak: number;
   totalResponseTimeMs: number;
   lastAnsweredAt: Date | null;
+  /**
+   * Closed days an operator re-opened for this participant only (e.g. a late joiner).
+   * Each can be attempted once, under the same timed rules; it is removed once used.
+   */
+  makeupDays?: number[];
 
   // Frozen at finalization (competition completion); leaderboard reads these.
   finalRank: number | null;
@@ -49,6 +54,7 @@ const ParticipantSchema = new Schema<ICompetitionParticipant>(
     longestStreak: { type: Number, default: 0 },
     totalResponseTimeMs: { type: Number, default: 0 },
     lastAnsweredAt: { type: Date, default: null },
+    makeupDays: { type: [Number], default: undefined },
     finalRank: { type: Number, default: null },
     finalScore: { type: Number, default: null },
     finalCorrect: { type: Number, default: null },

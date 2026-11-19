@@ -9,6 +9,7 @@ import type { RequestMeta } from "@/lib/security/request-meta";
 import { now } from "@/lib/time/clock";
 import type { OptionId } from "@/lib/validation/quiz";
 import type { ICompetition } from "@/models/Competition";
+import { CompetitionParticipant } from "@/models/CompetitionParticipant";
 import { DailyAnswer } from "@/models/DailyAnswer";
 import { Question, type IQuestion } from "@/models/Question";
 import { QuizAttempt } from "@/models/QuizAttempt";
@@ -23,7 +24,15 @@ import {
 } from "@/services/competition.service";
 import { flagFastAnswer } from "@/services/anticheat.service";
 import { questionForParticipant } from "@/services/pool.service";
-import { currentAttempt, displayMapping, displayOptions, lockAttempt, prepareAttemptSubmission } from "@/services/attempt.service";
+import {
+  currentAttempt,
+  displayMapping,
+  displayOptions,
+  lockAttempt,
+  makeupWindow,
+  pendingMakeupDays,
+  prepareAttemptSubmission,
+} from "@/services/attempt.service";
 import { getParticipant, joinCompetition, recalculateParticipantStats, repairUserMissedDays } from "@/services/participant.service";
 
 // ---------------------------------------------------------------------------
@@ -97,6 +106,75 @@ export interface QuizStateDTO {
     | null;
   nextQuestionAt: string | null;
   progress: ProgressDTO | null;
+  /** The next closed day an operator re-opened for this participant only, if any. */
+  makeup: MakeupDTO | null;
+}
+
+export type MakeupDTO =
+  | { status: "READY"; dayNumber: number; closesAt: string; remaining: number; info: ReadyInfo; antiCheat: AntiCheatSettings }
+  | { status: "IN_PROGRESS"; dayNumber: number; closesAt: string; remaining: number; question: UserQuestionDTO; startedAt: string; deadlineAt: string; antiCheat: AntiCheatSettings };
+
+function readyInfo(question: IQuestion, comp: ICompetition): ReadyInfo {
+  return {
+    points: question.points ?? comp.scoring.pointsPerCorrectAnswer,
+    category: question.category,
+    difficulty: question.difficulty,
+    multiSelect: correctIdsOf(question).length > 1,
+    optionCount: question.options.length,
+  };
+}
+
+/**
+ * The first usable make-up day. Days whose attempt already ended are skipped (ending an
+ * attempt drops the day from the list); loading the page while a make-up attempt runs
+ * ends it, exactly like today's question.
+ */
+async function loadMakeup(
+  comp: ICompetition,
+  participant: { makeupDays?: number[] },
+  userId: Types.ObjectId,
+  currentDay: number,
+  at: Date,
+  sessionId: Types.ObjectId | null | undefined,
+): Promise<MakeupDTO | null> {
+  const ac = antiCheatOf(comp);
+  if (!ac.enabled) return null;
+  const days = pendingMakeupDays(participant, currentDay);
+  const closesAt = makeupWindow(comp).closesAt.toISOString();
+  for (const [i, dayNumber] of days.entries()) {
+    const remaining = days.length - i;
+    const answer = await DailyAnswer.findOne({ competitionId: comp._id, userId, dayNumber }).select("status").lean();
+    if (answer?.status === "ANSWERED") {
+      await CompetitionParticipant.updateOne({ competitionId: comp._id, userId }, { $pull: { makeupDays: dayNumber } });
+      continue;
+    }
+    const attempt = await currentAttempt(comp, userId, dayNumber, at);
+    if (attempt?.status === "STARTED") {
+      const sameSession = !!sessionId && String(attempt.sessionId) === String(sessionId);
+      if (ac.lockOnLeave) {
+        await lockAttempt(comp, attempt, sameSession ? "RELOADED" : "SECOND_DEVICE", at);
+        continue;
+      }
+      if (!sameSession) continue;
+      const question = await Question.findById(attempt.questionId).lean();
+      if (!question) continue;
+      return {
+        status: "IN_PROGRESS",
+        dayNumber,
+        closesAt,
+        remaining,
+        question: { ...toUserQuestion(question, comp), options: displayOptions(question, attempt.optionOrder) },
+        startedAt: attempt.startedAt.toISOString(),
+        deadlineAt: attempt.deadlineAt.toISOString(),
+        antiCheat: ac,
+      };
+    }
+    if (attempt) continue; // already ended or submitted
+    const question = await questionForParticipant(comp._id, dayNumber, userId);
+    if (!question) continue;
+    return { status: "READY", dayNumber, closesAt, remaining, info: readyInfo(question, comp), antiCheat: ac };
+  }
+  return null;
 }
 
 async function loadProgress(comp: ICompetition, userId: Types.ObjectId, at: Date): Promise<ProgressDTO> {
@@ -134,7 +212,7 @@ async function loadProgress(comp: ICompetition, userId: Types.ObjectId, at: Date
 export async function getQuizState(userId: Types.ObjectId, at: Date = now(), opts: { sessionId?: Types.ObjectId | null } = {}): Promise<QuizStateDTO> {
   await connectDb();
   const comp = await getCurrentCompetition(at);
-  if (!comp) return { competition: null, isParticipant: false, canJoin: false, today: null, nextQuestionAt: null, progress: null };
+  if (!comp) return { competition: null, isParticipant: false, canJoin: false, today: null, nextQuestionAt: null, progress: null, makeup: null };
 
   const clock = clockFor(comp, at);
   const participant = await getParticipant(comp._id, userId);
@@ -146,6 +224,7 @@ export async function getQuizState(userId: Types.ObjectId, at: Date = now(), opt
     isParticipant: !!participant,
     canJoin: !participant && isRegistrationOpen(comp, at),
     progress: participant ? await loadProgress(comp, userId, at) : null,
+    makeup: null as MakeupDTO | null,
   };
 
   // Only an ACTIVE competition has a "today"; before the start / after the end there is no day window.
@@ -164,7 +243,8 @@ export async function getQuizState(userId: Types.ObjectId, at: Date = now(), opt
   } else if (dayNumber < comp.durationDays) {
     nextQuestionAt = getDayWindow(comp, dayNumber + 1).opensAt.toISOString();
   }
-  const active = { ...base, nextQuestionAt };
+  const makeup = participant ? await loadMakeup(comp, participant, userId, dayNumber, at, opts.sessionId) : null;
+  const active = { ...base, nextQuestionAt, makeup };
 
   if (nowMs < todayWindow.opensAt.getTime()) {
     return { ...active, today: { status: "UPCOMING", dayNumber, opensAt, closesAt } };
@@ -256,13 +336,7 @@ export async function getQuizState(userId: Types.ObjectId, at: Date = now(), opt
     }
   }
 
-  const info: ReadyInfo = {
-    points: question.points ?? comp.scoring.pointsPerCorrectAnswer,
-    category: question.category,
-    difficulty: question.difficulty,
-    multiSelect: correctIdsOf(question).length > 1,
-    optionCount: question.options.length,
-  };
+  const info = readyInfo(question, comp);
   return { ...active, today: { status: "READY", dayNumber, opensAt, closesAt, info, antiCheat: ac } };
 }
 
@@ -329,16 +403,23 @@ export async function submitAnswer(params: {
   const clock = clockFor(comp, at);
   if (clock.phase === "NOT_STARTED") throw new AppError("COMPETITION_NOT_STARTED");
   if (clock.phase === "ENDED") throw new AppError("COMPETITION_ENDED");
-  const dayNumber = clock.currentDay!;
-
-  if (params.expectedDayNumber !== undefined) {
-    if (params.expectedDayNumber < dayNumber) throw new AppError("QUESTION_EXPIRED");
-    if (params.expectedDayNumber > dayNumber) throw new AppError("QUESTION_NOT_AVAILABLE");
-  }
+  let dayNumber = clock.currentDay!;
 
   const user = await User.findById(params.userId).select("isActive").lean();
   if (!user || !user.isActive) throw new AppError("USER_DISABLED");
-  if (!(await getParticipant(comp._id, params.userId))) throw new AppError("NOT_PARTICIPANT", "Join the competition before answering.");
+  const participant = await getParticipant(comp._id, params.userId);
+  if (!participant) throw new AppError("NOT_PARTICIPANT", "Join the competition before answering.");
+
+  // An earlier day is only accepted when an operator re-opened it for this participant (timed mode).
+  let makeup = false;
+  if (params.expectedDayNumber !== undefined) {
+    if (params.expectedDayNumber < dayNumber) {
+      if (!antiCheatOf(comp).enabled || !pendingMakeupDays(participant, dayNumber).includes(params.expectedDayNumber)) throw new AppError("QUESTION_EXPIRED");
+      dayNumber = params.expectedDayNumber;
+      makeup = true;
+    }
+    if (params.expectedDayNumber > dayNumber) throw new AppError("QUESTION_NOT_AVAILABLE");
+  }
 
   let picked: string[] = [...new Set(params.optionIds?.length ? params.optionIds : params.optionId ? [params.optionId] : [])];
   // Timed mode: the client sent display letters; map them to the real ids via the attempt.
@@ -358,7 +439,7 @@ export async function submitAnswer(params: {
   if (!picked.length || selectedIds.length !== picked.length) throw new AppError("INVALID_OPTION");
   if (!multiSelect && selectedIds.length > 1) throw new AppError("INVALID_OPTION", "Choose exactly one option.");
 
-  const window = getDayWindow(comp, dayNumber);
+  const window = makeup ? makeupWindow(comp) : getDayWindow(comp, dayNumber);
   if (at.getTime() < window.opensAt.getTime()) {
     throw new AppError("QUESTION_NOT_AVAILABLE", "Today's question opens at 9:00 AM.");
   }
@@ -383,31 +464,36 @@ export async function submitAnswer(params: {
         .select("status")
         .session(session)
         .lean();
-      if (existing) throw new AppError(existing.status === "MISSED" ? "QUESTION_EXPIRED" : "ANSWER_ALREADY_SUBMITTED");
+      // A make-up day's MISSED record is replaced by the answer; anything else already counts.
+      if (existing && !(makeup && existing.status === "MISSED")) {
+        throw new AppError(existing.status === "MISSED" ? "QUESTION_EXPIRED" : "ANSWER_ALREADY_SUBMITTED");
+      }
       // Marks the attempt SUBMITTED in this transaction; fails if it was locked meanwhile.
       if (timed) await timed.claim(session);
 
-      await DailyAnswer.create(
-        [
-          {
-            competitionId: comp._id,
-            userId: params.userId,
-            dayNumber,
-            questionId: question._id,
-            selectedOptionId: selectedIds[0],
-            selectedOptionIds: selectedIds,
-            isCorrect,
-            score,
-            status: "ANSWERED",
-            answeredAt: at,
-            responseTimeMs: timed ? timed.responseTimeMs : Math.max(0, at.getTime() - window.opensAt.getTime()),
-            ip: params.meta?.ip ?? null,
-            userAgent: params.meta?.userAgent ?? null,
-            sessionId: params.sessionId ?? null,
-          },
-        ],
-        { session },
-      );
+      const record = {
+        competitionId: comp._id,
+        userId: params.userId,
+        dayNumber,
+        questionId: question._id,
+        selectedOptionId: selectedIds[0],
+        selectedOptionIds: selectedIds,
+        isCorrect,
+        score,
+        status: "ANSWERED" as const,
+        answeredAt: at,
+        responseTimeMs: timed ? timed.responseTimeMs : Math.max(0, at.getTime() - window.opensAt.getTime()),
+        ip: params.meta?.ip ?? null,
+        userAgent: params.meta?.userAgent ?? null,
+        sessionId: params.sessionId ?? null,
+      };
+      if (existing) {
+        const res = await DailyAnswer.updateOne({ _id: existing._id, status: "MISSED" }, { $set: record }, { session });
+        if (res.modifiedCount !== 1) throw new AppError("ANSWER_ALREADY_SUBMITTED");
+        await CompetitionParticipant.updateOne({ competitionId: comp._id, userId: params.userId }, { $pull: { makeupDays: dayNumber } }, { session });
+      } else {
+        await DailyAnswer.create([record], { session });
+      }
       await recalculateParticipantStats(comp, params.userId, { session, at });
     });
   } catch (e) {

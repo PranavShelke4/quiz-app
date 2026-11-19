@@ -5,6 +5,7 @@ import {
   getCompetitionClock,
   getDayAccess,
   getDayWindow,
+  isHoliday,
 } from "@/lib/competition/schedule";
 import { addDaysToLocalDate, diffLocalDates, isValidLocalDate, localDateInZone, zonedTimeToUtc } from "@/lib/time/zoned";
 
@@ -110,5 +111,42 @@ describe("competition day calculation", () => {
   it("rejects out-of-range days", () => {
     expect(() => getDayWindow(input, 0)).toThrow();
     expect(() => getDayWindow(input, 31)).toThrow();
+  });
+});
+
+describe("holiday rule: BANK (every Sunday + 2nd & 4th Saturday)", () => {
+  // Mirrors the live competition: Day 1 = Mon 16 Nov 2026, Asia/Kolkata.
+  const input = { startDate: kolkata("2026-11-16"), durationDays: 38, timezone: "Asia/Kolkata", dailyStartTime: "09:00", dailyEndTime: "23:59", holidayRule: "BANK" as const };
+  const dateOf = (d: number) => getDayWindow(input, d).localDate;
+
+  it("detects Sundays and only the 2nd/4th Saturdays", () => {
+    expect(isHoliday("2026-11-22", "BANK")).toBe(true); // Sunday
+    expect(isHoliday("2026-11-14", "BANK")).toBe(true); // 2nd Saturday
+    expect(isHoliday("2026-11-28", "BANK")).toBe(true); // 4th Saturday
+    expect(isHoliday("2026-11-21", "BANK")).toBe(false); // 3rd Saturday
+    expect(isHoliday("2026-11-07", "BANK")).toBe(false); // 1st Saturday
+    expect(isHoliday("2026-11-23", "BANK")).toBe(false); // Monday
+    expect(isHoliday("2026-11-22", "NONE")).toBe(false);
+  });
+
+  it("keeps past days fixed and moves later days past holidays", () => {
+    expect([1, 2, 3, 4, 5, 6].map(dateOf)).toEqual(["2026-11-16", "2026-11-17", "2026-11-18", "2026-11-19", "2026-11-20", "2026-11-21"]);
+    expect(dateOf(7)).toBe("2026-11-23"); // skips Sun 22
+    expect(dateOf(11)).toBe("2026-11-27");
+    expect(dateOf(12)).toBe("2026-11-30"); // skips Sat 28 (4th) + Sun 29
+  });
+
+  it("on a holiday the current day is the next quiz day, not yet open", () => {
+    const clock = getCompetitionClock(input, kolkata("2026-11-22", "12:00:00"));
+    expect(clock).toMatchObject({ phase: "ACTIVE", currentDay: 7, lastClosedDay: 6, holidayToday: true });
+    expect(clock.today!.localDate).toBe("2026-11-23");
+    expect(getCompetitionClock(input, kolkata("2026-11-23", "12:00:00"))).toMatchObject({ currentDay: 7, holidayToday: false });
+  });
+
+  it("extends the end date so every quiz day still runs", () => {
+    const last = dateOf(38);
+    expect(computeEndDate("2026-11-16", 38, "Asia/Kolkata", "BANK").toISOString()).toBe(kolkata(addDaysToLocalDate(last, 1)).toISOString());
+    expect(diffLocalDates("2026-11-16", last)).toBeGreaterThan(37);
+    for (let d = 1; d <= 38; d++) expect(isHoliday(dateOf(d), "BANK")).toBe(false);
   });
 });

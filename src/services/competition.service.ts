@@ -56,7 +56,7 @@ export function ruleSectionsOf(comp: Pick<ICompetition, "rules"> & { ruleSection
 }
 
 export function clockFor(
-  comp: Pick<ICompetition, "startDate" | "durationDays" | "timezone"> & Partial<Pick<ICompetition, "dailyStartTime" | "dailyEndTime">>,
+  comp: Pick<ICompetition, "startDate" | "durationDays" | "timezone"> & Partial<Pick<ICompetition, "dailyStartTime" | "dailyEndTime" | "holidayRule">>,
   at: Date = now(),
 ): CompetitionClock {
   return getCompetitionClock(
@@ -66,6 +66,7 @@ export function clockFor(
       timezone: comp.timezone,
       dailyStartTime: comp.dailyStartTime ?? "09:00",
       dailyEndTime: comp.dailyEndTime ?? "18:00",
+      holidayRule: comp.holidayRule ?? "NONE",
     },
     at,
   );
@@ -91,6 +92,8 @@ export interface PublicCompetitionDTO {
   daysRemaining: number;
   todayOpensAt: string | null;
   todayClosesAt: string | null;
+  /** Today is a holiday: no question; todayOpensAt is the next quiz day. */
+  holidayToday: boolean;
   rules: string[];
   ruleSections: RuleSection[];
   antiCheat: AntiCheatSettings;
@@ -120,6 +123,7 @@ export function toPublicCompetition(comp: ICompetition, at: Date = now()): Publi
     daysRemaining: clock.daysRemaining,
     todayOpensAt: clock.today?.opensAt.toISOString() ?? null,
     todayClosesAt: clock.today?.closesAt.toISOString() ?? null,
+    holidayToday: clock.phase === "ACTIVE" && !!clock.holidayToday,
     rules: ruleSectionsOf(comp).flatMap((s) => s.rules),
     ruleSections: ruleSectionsOf(comp),
     antiCheat: antiCheatOf(comp),
@@ -266,9 +270,9 @@ async function uniqueSlug(base: string, excludeId?: Types.ObjectId) {
   return slug;
 }
 
-function deriveSchedule(input: Pick<CompetitionInput, "startLocalDate" | "timezone" | "durationDays">) {
+function deriveSchedule(input: Pick<CompetitionInput, "startLocalDate" | "timezone" | "durationDays" | "holidayRule">) {
   const startDate = computeStartDate(input.startLocalDate, input.timezone);
-  const endDate = computeEndDate(input.startLocalDate, input.durationDays, input.timezone);
+  const endDate = computeEndDate(input.startLocalDate, input.durationDays, input.timezone, input.holidayRule ?? "NONE");
   return { startDate, endDate };
 }
 
@@ -295,6 +299,7 @@ function buildDoc(input: CompetitionInput) {
     category: input.category || "All",
     dailyStartTime: input.dailyStartTime || "09:00",
     dailyEndTime: input.dailyEndTime || "18:00",
+    holidayRule: input.holidayRule ?? "NONE",
     description: input.description,
     startDate,
     endDate,
@@ -328,7 +333,7 @@ export async function createCompetition(input: CompetitionInput, actor: Actor): 
 }
 
 /** Fields that may change after the competition has started. */
-const SAFE_AFTER_START = new Set(["name", "category", "description", "rules", "ruleSections", "antiCheat", "leaderboardRevealMode", "leaderboardRevealLocalDateTime", "registrationOpen", "registrationCloseLocalDate"]);
+const SAFE_AFTER_START = new Set(["holidayRule", "name", "category", "description", "rules", "ruleSections", "antiCheat", "leaderboardRevealMode", "leaderboardRevealLocalDateTime", "registrationOpen", "registrationCloseLocalDate"]);
 
 export async function updateCompetition(id: string, input: Partial<CompetitionInput>, actor: Actor): Promise<ICompetition> {
   await connectDb();
@@ -348,6 +353,7 @@ export async function updateCompetition(id: string, input: Partial<CompetitionIn
     category: input.category ?? comp.category ?? "All",
     dailyStartTime: input.dailyStartTime ?? comp.dailyStartTime ?? "09:00",
     dailyEndTime: input.dailyEndTime ?? comp.dailyEndTime ?? "18:00",
+    holidayRule: input.holidayRule ?? comp.holidayRule ?? "NONE",
     description: input.description ?? comp.description,
     startLocalDate: input.startLocalDate ?? localDateInZone(comp.startDate, comp.timezone),
     timezone: input.timezone ?? comp.timezone,
@@ -375,6 +381,19 @@ export async function updateCompetition(id: string, input: Partial<CompetitionIn
   };
   const doc = buildDoc(merged);
 
+  // A running competition may adopt (or drop) a holiday rule only if no day that has already
+  // opened moves: past and current days keep their dates; only later days shift.
+  const holidayChanged = (comp.holidayRule ?? "NONE") !== doc.holidayRule;
+  if (started && holidayChanged) {
+    const clock = clockFor(comp);
+    const fixedThrough = clock.phase === "ENDED" ? comp.durationDays : Math.max(clock.lastClosedDay, clock.currentDay ?? 0);
+    for (let d = 1; d <= fixedThrough; d++) {
+      if (getDayWindow(comp, d).localDate !== getDayWindow({ ...comp, holidayRule: doc.holidayRule }, d).localDate) {
+        throw new AppError("COMPETITION_LOCKED", `This holiday rule would move day ${d}, which has already opened, so it can't be applied now.`, { fields: ["holidayRule"] });
+      }
+    }
+  }
+
   if (!started) {
     const outOfRange = await Question.countDocuments({ competitionId: comp._id, dayNumber: { $gt: merged.durationDays } });
     if (outOfRange) {
@@ -384,7 +403,7 @@ export async function updateCompetition(id: string, input: Partial<CompetitionIn
   }
 
   await Competition.updateOne({ _id: comp._id }, { $set: doc });
-  if (!started) await resyncQuestionSchedule({ ...comp, ...doc });
+  if (!started || holidayChanged) await resyncQuestionSchedule({ ...comp, ...doc });
   await recordAudit({ adminId: actor.userId, action: "COMPETITION_UPDATED", targetType: "Competition", targetId: comp._id, metadata: { changed: Object.keys(input) }, meta: actor.meta });
   return getCompetitionById(comp._id);
 }
@@ -395,7 +414,7 @@ function toLocalDateTimeInput(date: Date, timezone: string) {
   return `${local}T${time}`;
 }
 
-export async function resyncQuestionSchedule(comp: Pick<ICompetition, "_id" | "startDate" | "durationDays" | "timezone">, session?: ClientSession) {
+export async function resyncQuestionSchedule(comp: Pick<ICompetition, "_id" | "startDate" | "durationDays" | "timezone" | "holidayRule">, session?: ClientSession) {
   const questions = await Question.find({ competitionId: comp._id }).select("dayNumber").session(session ?? null).lean();
   if (!questions.length) return;
   await Question.bulkWrite(
@@ -505,6 +524,7 @@ export function toAdminCompetition(comp: ICompetition, at: Date = now()) {
     timezone: comp.timezone,
     dailyStartTime: comp.dailyStartTime ?? "09:00",
     dailyEndTime: comp.dailyEndTime ?? "18:00",
+    holidayRule: comp.holidayRule ?? "NONE",
     durationDays: comp.durationDays,
     scoring: comp.scoring,
     tieBreakers: comp.tieBreakers,

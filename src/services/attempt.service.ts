@@ -8,11 +8,13 @@ import type { RequestMeta } from "@/lib/security/request-meta";
 import { now } from "@/lib/time/clock";
 import { OPTION_IDS, type OptionId } from "@/lib/validation/quiz";
 import type { ICompetition } from "@/models/Competition";
+import { CompetitionParticipant, type ICompetitionParticipant } from "@/models/CompetitionParticipant";
 import { DailyAnswer } from "@/models/DailyAnswer";
 import { Question, type IQuestion } from "@/models/Question";
 import { QuizAttempt, type IQuizAttempt } from "@/models/QuizAttempt";
 import { SuspicionFlag } from "@/models/SuspicionFlag";
 import { User } from "@/models/User";
+import { getDayWindow } from "@/lib/competition/schedule";
 import { clockFor, getCurrentCompetition } from "@/services/competition.service";
 import { questionForParticipant } from "@/services/pool.service";
 import { getParticipant, recalculateParticipantStats } from "@/services/participant.service";
@@ -53,14 +55,38 @@ export function displayOptions(q: Pick<IQuestion, "options">, optionOrder: reado
   return optionOrder.map((real, i) => ({ id: OPTION_IDS[i]!, text: byId.get(real as OptionId) ?? "" }));
 }
 
-async function loadToday(userId: Types.ObjectId, at: Date) {
+/**
+ * Make-up days: closed days an operator re-opened for one participant (participant.makeupDays).
+ * Only past days count, and only in timed mode, where the attempt itself bounds the answer time.
+ */
+export function pendingMakeupDays(participant: Pick<ICompetitionParticipant, "makeupDays"> | null, currentDay: number): number[] {
+  return [...new Set(participant?.makeupDays ?? [])].filter((d) => Number.isInteger(d) && d >= 1 && d < currentDay).sort((a, b) => a - b);
+}
+
+/** A make-up attempt may run any time the competition is live (the timer still applies). */
+export function makeupWindow(comp: ICompetition) {
+  return { opensAt: getDayWindow(comp, 1).opensAt, closesAt: getDayWindow(comp, comp.durationDays).closesAt };
+}
+
+/**
+ * Resolves the day an attempt call is about: today, or (when `requestedDay` names an earlier
+ * day) one of this participant's make-up days. Anything else is rejected as expired.
+ */
+async function loadToday(userId: Types.ObjectId, at: Date, requestedDay?: number) {
   const comp = await getCurrentCompetition(at);
   if (!comp) throw new AppError("COMPETITION_NOT_FOUND");
   const clock = clockFor(comp, at);
   if (clock.phase === "NOT_STARTED") throw new AppError("COMPETITION_NOT_STARTED");
   if (clock.phase === "ENDED" || !clock.today || clock.currentDay === null) throw new AppError("COMPETITION_ENDED");
-  if (!(await getParticipant(comp._id, userId))) throw new AppError("NOT_PARTICIPANT", "Join the competition before answering.");
-  return { comp, dayNumber: clock.currentDay, window: clock.today };
+  const participant = await getParticipant(comp._id, userId);
+  if (!participant) throw new AppError("NOT_PARTICIPANT", "Join the competition before answering.");
+  const makeupDays = antiCheatOf(comp).enabled ? pendingMakeupDays(participant, clock.currentDay) : [];
+  if (requestedDay === undefined || requestedDay === clock.currentDay) {
+    return { comp, dayNumber: clock.currentDay, window: clock.today, makeup: false, makeupDays };
+  }
+  if (requestedDay > clock.currentDay) throw new AppError("QUESTION_NOT_AVAILABLE");
+  if (!makeupDays.includes(requestedDay)) throw new AppError("QUESTION_EXPIRED");
+  return { comp, dayNumber: requestedDay, window: makeupWindow(comp), makeup: true, makeupDays };
 }
 
 /** Ends a STARTED attempt and records the day as MISSED (0 points). Idempotent. */
@@ -77,14 +103,21 @@ async function endAttempt(
       { session },
     );
     if (res.modifiedCount !== 1) return false; // already submitted/ended by a concurrent request
-    try {
-      await DailyAnswer.create(
-        [{ competitionId: comp._id, userId: attempt.userId, dayNumber: attempt.dayNumber, questionId: attempt.questionId, selectedOptionId: null, isCorrect: null, score: 0, status: "MISSED" }],
-        { session },
-      );
-    } catch (e) {
-      if (!isDuplicateKeyError(e)) throw e;
+    // A make-up day already has its MISSED record. Check first: a duplicate-key error inside
+    // a transaction aborts it, and the driver would then retry the whole transaction.
+    const recorded = await DailyAnswer.exists({ competitionId: comp._id, userId: attempt.userId, dayNumber: attempt.dayNumber }).session(session);
+    if (!recorded) {
+      try {
+        await DailyAnswer.create(
+          [{ competitionId: comp._id, userId: attempt.userId, dayNumber: attempt.dayNumber, questionId: attempt.questionId, selectedOptionId: null, isCorrect: null, score: 0, status: "MISSED" }],
+          { session },
+        );
+      } catch (e) {
+        if (!isDuplicateKeyError(e)) throw e;
+      }
     }
+    // A used make-up day is gone either way (no-op for regular days).
+    await CompetitionParticipant.updateOne({ competitionId: comp._id, userId: attempt.userId }, { $pull: { makeupDays: attempt.dayNumber } }, { session });
     await recalculateParticipantStats(comp, attempt.userId, { session, at });
     return true;
   });
@@ -140,10 +173,10 @@ export function startedPayload(q: IQuestion, comp: ICompetition, attempt: IQuizA
  * Starts (or, when allowed, resumes) today's attempt. A second Start while an attempt is
  * running means a reload, another tab or another device: with lockOnLeave that ends it.
  */
-export async function startAttempt(params: { userId: Types.ObjectId; sessionId: Types.ObjectId | null; meta?: Meta; at?: Date }) {
+export async function startAttempt(params: { userId: Types.ObjectId; sessionId: Types.ObjectId | null; dayNumber?: number; meta?: Meta; at?: Date }) {
   await connectDb();
   const at = params.at ?? now();
-  const { comp, dayNumber, window } = await loadToday(params.userId, at);
+  const { comp, dayNumber, window, makeup } = await loadToday(params.userId, at, params.dayNumber);
   const ac = antiCheatOf(comp);
   if (!ac.enabled) throw new AppError("CONFLICT", "Timed attempts aren't enabled for this competition.");
   if (at.getTime() < window.opensAt.getTime()) throw new AppError("QUESTION_NOT_AVAILABLE");
@@ -152,7 +185,8 @@ export async function startAttempt(params: { userId: Types.ObjectId; sessionId: 
   if (!user?.isActive) throw new AppError("USER_DISABLED");
 
   const answered = await DailyAnswer.findOne({ competitionId: comp._id, userId: params.userId, dayNumber }).select("status").lean();
-  if (answered) throw new AppError(answered.status === "ANSWERED" ? "ANSWER_ALREADY_SUBMITTED" : "ATTEMPT_LOCKED");
+  // A make-up day already carries its MISSED record; that is what the attempt replaces.
+  if (answered && !(makeup && answered.status === "MISSED")) throw new AppError(answered.status === "ANSWERED" ? "ANSWER_ALREADY_SUBMITTED" : "ATTEMPT_LOCKED");
 
   const existing = await QuizAttempt.findOne({ competitionId: comp._id, userId: params.userId, dayNumber }).lean();
   // A running attempt keeps its question; a new one gets this participant's pool version.
@@ -199,15 +233,20 @@ export async function startAttempt(params: { userId: Types.ObjectId; sessionId: 
 export async function recordAttemptEvent(params: { userId: Types.ObjectId; sessionId: Types.ObjectId | null; type: AttemptEventType; at?: Date }) {
   await connectDb();
   const at = params.at ?? now();
-  const { comp, dayNumber } = await loadToday(params.userId, at);
+  const { comp, dayNumber, makeupDays } = await loadToday(params.userId, at);
   const ac = antiCheatOf(comp);
+  // The running attempt may be today's or a make-up day's (only one runs at a time).
+  const days = [dayNumber, ...makeupDays];
   const attempt = await QuizAttempt.findOneAndUpdate(
-    { competitionId: comp._id, userId: params.userId, dayNumber, status: "STARTED", "events.49": { $exists: false } },
+    { competitionId: comp._id, userId: params.userId, dayNumber: { $in: days }, status: "STARTED", "events.49": { $exists: false } },
     { $push: { events: { type: params.type, at } } },
-    { new: true },
+    { new: true, sort: { startedAt: -1 } },
   ).lean();
   if (!attempt) {
-    const current = await QuizAttempt.findOne({ competitionId: comp._id, userId: params.userId, dayNumber }).select("status lockReason").lean();
+    const current = await QuizAttempt.findOne({ competitionId: comp._id, userId: params.userId, dayNumber: { $in: days } })
+      .sort({ startedAt: -1 })
+      .select("status lockReason")
+      .lean();
     return { status: current?.status ?? null, lockReason: current?.lockReason ?? null };
   }
   const isLeave = (LEAVE_EVENTS as readonly string[]).includes(params.type);

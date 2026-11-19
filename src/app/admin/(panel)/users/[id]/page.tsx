@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Types } from "mongoose";
+import { DayAccess } from "@/components/admin/day-access";
 import { UserActions } from "@/components/admin/user-actions";
 import { ButtonLink } from "@/components/ui/button";
 import { Avatar, Badge, Card, CardContent, CardHeader, CardTitle } from "@/components/ui/primitives";
@@ -9,6 +11,7 @@ import { requireAdmin } from "@/lib/auth/dal";
 import { hasPermission } from "@/lib/auth/rbac";
 import { isAppError } from "@/lib/errors";
 import { formatDate, formatDateTime } from "@/lib/utils";
+import { getParticipantDays } from "@/services/makeup.service";
 import { getUserDetail } from "@/services/user.service";
 
 export const metadata: Metadata = { title: "User" };
@@ -24,6 +27,14 @@ export default async function AdminUserDetailPage({ params }: PageProps<"/admin/
     throw e;
   }
   const { user: u, competitions, sessions, flags, activeSessions } = detail;
+  // Day-by-day status (and re-open controls) for competitions that are still running.
+  const dayAccess = (
+    await Promise.all(
+      competitions
+        .filter((c) => c.status === "ACTIVE")
+        .map(async (c) => ({ c, data: await getParticipantDays(new Types.ObjectId(c.competitionId), new Types.ObjectId(u.id)) })),
+    )
+  ).filter((x) => x.data !== null);
 
   return (
     <>
@@ -104,6 +115,22 @@ export default async function AdminUserDetailPage({ params }: PageProps<"/admin/
           )}
         </Card>
       </div>
+
+      {dayAccess.map(({ c, data }) => (
+        <Card key={c.competitionId}>
+          <CardHeader><CardTitle>Day access · {c.name}</CardTitle></CardHeader>
+          <CardContent>
+            <DayAccess
+              userId={u.id}
+              competitionId={c.competitionId}
+              days={data!.days}
+              currentDay={data!.currentDay}
+              canReopen={data!.canReopen}
+              timedMode={data!.timedMode}
+            />
+          </CardContent>
+        </Card>
+      ))}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>

@@ -1,3 +1,4 @@
+import { HOLIDAY_RULES, type HolidayRule } from "@/lib/competition/schedule";
 import { Schema, type Model, type Types } from "mongoose";
 import { defineModel } from "@/lib/db/model";
 import type { AntiCheatSettings } from "@/lib/quiz/anticheat-config";
@@ -18,6 +19,8 @@ export interface ICompetition {
   category: string;
   dailyStartTime: string;
   dailyEndTime: string;
+  /** Dates with no question; the remaining quiz days move to the next working dates. */
+  holidayRule?: HolidayRule;
 
   /** UTC instant of local 00:00 on Day 1 in `timezone`. */
   startDate: Date;
@@ -73,6 +76,7 @@ const CompetitionSchema = new Schema<ICompetition>(
     category: { type: String, default: "All", trim: true, maxlength: 60 },
     dailyStartTime: { type: String, default: "09:00", trim: true },
     dailyEndTime: { type: String, default: "18:00", trim: true },
+    holidayRule: { type: String, enum: HOLIDAY_RULES, default: "NONE" },
     slug: { type: String, required: true, lowercase: true, trim: true, maxlength: 80 },
     description: { type: String, default: "", maxlength: 2000 },
     startDate: { type: Date, required: true },

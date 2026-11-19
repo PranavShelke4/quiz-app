@@ -10,7 +10,8 @@ import { ApiClientError, api } from "@/lib/api/client";
 
 import { TIE_BREAKERS, TIE_BREAKER_LABELS, type TieBreaker } from "@/lib/leaderboard/ranking";
 import { MAX_TIME_LIMIT_SECONDS, MIN_TIME_LIMIT_SECONDS, type AntiCheatSettings } from "@/lib/quiz/anticheat-config";
-import { COMMON_TIME_ZONES, addDaysToLocalDate, isValidLocalDate } from "@/lib/time/zoned";
+import { HOLIDAY_RULES, HOLIDAY_RULE_LABELS, localDateForDay, type HolidayRule } from "@/lib/competition/schedule";
+import { COMMON_TIME_ZONES, isValidLocalDate } from "@/lib/time/zoned";
 
 export interface CompetitionFormValues {
   name: string;
@@ -18,6 +19,7 @@ export interface CompetitionFormValues {
   category: string;
   dailyStartTime: string;
   dailyEndTime: string;
+  holidayRule: HolidayRule;
   startLocalDate: string;
   timezone: string;
   durationDays: number;
@@ -63,8 +65,8 @@ export function CompetitionForm({
 
   const set = <K extends keyof CompetitionFormValues>(k: K, value: CompetitionFormValues[K]) => setV((s) => ({ ...s, [k]: value }));
   const lastDay = useMemo(
-    () => (isValidLocalDate(v.startLocalDate) && v.durationDays > 0 ? addDaysToLocalDate(v.startLocalDate, v.durationDays - 1) : "—"),
-    [v.startLocalDate, v.durationDays],
+    () => (isValidLocalDate(v.startLocalDate) && v.durationDays > 0 ? localDateForDay({ holidayRule: v.holidayRule }, v.startLocalDate, v.durationDays) : "—"),
+    [v.startLocalDate, v.durationDays, v.holidayRule],
   );
   const zones = COMMON_TIME_ZONES.includes(v.timezone as (typeof COMMON_TIME_ZONES)[number]) ? COMMON_TIME_ZONES : [v.timezone, ...COMMON_TIME_ZONES];
 
@@ -85,6 +87,7 @@ export function CompetitionForm({
       ? {
           name: v.name,
           description: v.description,
+          holidayRule: v.holidayRule,
           ruleSections,
           antiCheat: v.antiCheat,
           leaderboardRevealMode: v.leaderboardRevealMode,
@@ -162,6 +165,18 @@ export function CompetitionForm({
           </Field>
           <Field id="dailyEndTime" label="Daily Quiz End Time" error={errors.dailyEndTime} hint="Quiz closes each day (HH:MM)">
             <Input id="dailyEndTime" type="time" value={v.dailyEndTime} onChange={(e) => set("dailyEndTime", e.target.value)} disabled={started} />
+          </Field>
+          <Field
+            id="holidayRule"
+            label="Holidays (no question)"
+            error={errors.holidayRule}
+            hint={started ? "Can change while running, as long as no day that already opened would move." : "Quiz days skip these dates and continue on the next working day."}
+          >
+            <Select id="holidayRule" value={v.holidayRule} onChange={(e) => set("holidayRule", e.target.value as HolidayRule)}>
+              {HOLIDAY_RULES.map((r) => (
+                <option key={r} value={r}>{HOLIDAY_RULE_LABELS[r]}</option>
+              ))}
+            </Select>
           </Field>
           <p className="text-sm text-muted-foreground md:col-span-3">
             Runs from <strong className="text-foreground">{v.startLocalDate || "—"}</strong> to <strong className="text-foreground">{lastDay}</strong> (end date,

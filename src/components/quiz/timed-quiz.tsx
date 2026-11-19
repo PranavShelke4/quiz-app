@@ -16,7 +16,17 @@ interface Started {
 }
 
 type Props =
-  | { mode: "READY"; info: ReadyInfo; antiCheat: AntiCheatSettings; dayNumber: number; closesAt: string; watermark: string; nextQuestionLabel: string | null }
+  | {
+      mode: "READY";
+      info: ReadyInfo;
+      antiCheat: AntiCheatSettings;
+      dayNumber: number;
+      closesAt: string;
+      watermark: string;
+      nextQuestionLabel: string | null;
+      /** A closed day re-opened for this participant: the server needs to know which day. */
+      makeup?: boolean;
+    }
   | { mode: "IN_PROGRESS"; started: Started; antiCheat: AntiCheatSettings; watermark: string; closesAt: string; nextQuestionLabel: string | null }
   | { mode: "ENDED"; reason: LockReason | "TIME_UP"; nextQuestionLabel: string | null };
 
@@ -76,7 +86,7 @@ export function TimedQuiz(props: Props) {
     setError(null);
     try {
       if (ac.requireFullscreen) await tryFullscreen(); // best effort; unsupported phones just continue
-      const res = await api<Started>("/api/quiz/attempt/start", { body: {} });
+      const res = await api<Started>("/api/quiz/attempt/start", { body: props.mode === "READY" && props.makeup ? { dayNumber: props.dayNumber } : {} });
       setStarted(res);
     } catch (e) {
       if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
@@ -136,7 +146,7 @@ function EndedCard({ reason, nextQuestionLabel }: { reason: LockReason | "TIME_U
   return (
     <Card className="space-y-3 p-6 text-center sm:p-8">
       <XCircle className="mx-auto size-12 text-danger" aria-hidden />
-      <h2 className="text-xl font-semibold">Today&apos;s attempt has ended</h2>
+      <h2 className="text-xl font-semibold">This attempt has ended</h2>
       <p className="text-muted-foreground">{LOCK_REASON_LABELS[reason]}</p>
       <p className="text-sm text-muted-foreground">This day is recorded as missed (0 points).</p>
       {nextQuestionLabel && <p className="text-sm text-muted-foreground">Next question: {nextQuestionLabel}</p>}

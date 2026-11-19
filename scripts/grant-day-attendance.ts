@@ -68,10 +68,7 @@ async function main() {
   }
   const comp = comps[0]!;
   if (day > comp.durationDays) throw new Error(`Day ${day} is beyond the competition's ${comp.durationDays} days`);
-  const window = getDayWindow(
-    { startDate: comp.startDate, durationDays: comp.durationDays, timezone: comp.timezone, dailyStartTime: comp.dailyStartTime ?? "09:00", dailyEndTime: comp.dailyEndTime ?? "18:00" },
-    day,
-  );
+  const window = getDayWindow(comp, day);
   console.log(`Competition: ${comp.name} (${comp.slug}, ${comp._id}) status=${comp.status}`);
   console.log(`Day ${day} window: ${window.opensAt.toISOString()} → ${window.closesAt.toISOString()}`);
   console.log(apply ? "MODE: APPLY (writing to the database)\n" : "MODE: DRY RUN (no writes; pass --apply to write)\n");
