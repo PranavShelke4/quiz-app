@@ -104,7 +104,8 @@ export async function ensureMissedRecords(
           competitionId: comp._id,
           userId,
           dayNumber: day,
-          questionId: pickForParticipant(questionDays.get(day) ?? [], { competitionId: String(comp._id), dayNumber: day, userId: String(userId) }) ?? null,
+          // RANDOM mode: a missed day never showed a question, so none is recorded.
+          questionId: comp.questionMode === "RANDOM" ? null : pickForParticipant(questionDays.get(day) ?? [], { competitionId: String(comp._id), dayNumber: day, userId: String(userId) }) ?? null,
           selectedOptionId: null,
           isCorrect: null,
           score: 0,

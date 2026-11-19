@@ -170,7 +170,7 @@ async function loadMakeup(
       };
     }
     if (attempt) continue; // already ended or submitted
-    const question = await questionForParticipant(comp._id, dayNumber, userId);
+    const question = await questionForParticipant(comp, dayNumber, userId);
     if (!question) continue;
     return { status: "READY", dayNumber, closesAt, remaining, info: readyInfo(question, comp), antiCheat: ac };
   }
@@ -262,7 +262,7 @@ export async function getQuizState(userId: Types.ObjectId, at: Date = now(), opt
   const pinnedId = answer?.questionId ?? (participant ? (await QuizAttempt.findOne({ competitionId: comp._id, userId, dayNumber }).select("questionId").lean())?.questionId : null);
   const question = pinnedId
     ? await Question.findById(pinnedId).lean()
-    : await questionForParticipant(comp._id, dayNumber, userId);
+    : await questionForParticipant(comp, dayNumber, userId);
   if (!question) return { ...active, today: { status: "UNAVAILABLE", dayNumber, opensAt, closesAt } };
   // Only participants ever receive the question text and options.
   if (!participant) return { ...active, today: { status: "LOCKED", dayNumber, opensAt, closesAt } };
@@ -360,7 +360,7 @@ export async function getQuestionForDay(userId: Types.ObjectId, dayParam: string
   if (day > clock.currentDay!) throw new AppError("QUESTION_NOT_AVAILABLE");
   // Timed mode: the text is only released through POST /api/quiz/attempt/start.
   if (antiCheatOf(comp).enabled) throw new AppError("ATTEMPT_REQUIRED");
-  const q = await questionForParticipant(comp._id, day, userId);
+  const q = await questionForParticipant(comp, day, userId);
   if (!q) throw new AppError("QUESTION_NOT_AVAILABLE");
   return toUserQuestion(q, comp);
 }
@@ -430,7 +430,7 @@ export async function submitAnswer(params: {
   if (timed) picked = timed.realIds;
 
   // The question this participant was shown: the attempt's in timed mode, else their pool version.
-  const question = timed ? await Question.findById(timed.attempt.questionId).lean() : await questionForParticipant(comp._id, dayNumber, params.userId);
+  const question = timed ? await Question.findById(timed.attempt.questionId).lean() : await questionForParticipant(comp, dayNumber, params.userId);
   if (!question || question.status !== "PUBLISHED") throw new AppError("QUESTION_NOT_AVAILABLE");
   if (params.expectedQuestionId && params.expectedQuestionId !== String(question._id)) throw new AppError("QUESTION_EXPIRED");
   const multiSelect = correctIdsOf(question).length > 1;

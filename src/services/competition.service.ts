@@ -300,6 +300,7 @@ function buildDoc(input: CompetitionInput) {
     dailyStartTime: input.dailyStartTime || "09:00",
     dailyEndTime: input.dailyEndTime || "18:00",
     holidayRule: input.holidayRule ?? "NONE",
+    questionMode: input.questionMode ?? "DAILY",
     description: input.description,
     startDate,
     endDate,
@@ -333,7 +334,7 @@ export async function createCompetition(input: CompetitionInput, actor: Actor): 
 }
 
 /** Fields that may change after the competition has started. */
-const SAFE_AFTER_START = new Set(["holidayRule", "name", "category", "description", "rules", "ruleSections", "antiCheat", "leaderboardRevealMode", "leaderboardRevealLocalDateTime", "registrationOpen", "registrationCloseLocalDate"]);
+const SAFE_AFTER_START = new Set(["holidayRule", "questionMode", "name", "category", "description", "rules", "ruleSections", "antiCheat", "leaderboardRevealMode", "leaderboardRevealLocalDateTime", "registrationOpen", "registrationCloseLocalDate"]);
 
 export async function updateCompetition(id: string, input: Partial<CompetitionInput>, actor: Actor): Promise<ICompetition> {
   await connectDb();
@@ -354,6 +355,7 @@ export async function updateCompetition(id: string, input: Partial<CompetitionIn
     dailyStartTime: input.dailyStartTime ?? comp.dailyStartTime ?? "09:00",
     dailyEndTime: input.dailyEndTime ?? comp.dailyEndTime ?? "18:00",
     holidayRule: input.holidayRule ?? comp.holidayRule ?? "NONE",
+    questionMode: input.questionMode ?? comp.questionMode ?? "DAILY",
     description: input.description ?? comp.description,
     startLocalDate: input.startLocalDate ?? localDateInZone(comp.startDate, comp.timezone),
     timezone: input.timezone ?? comp.timezone,
@@ -525,6 +527,7 @@ export function toAdminCompetition(comp: ICompetition, at: Date = now()) {
     dailyStartTime: comp.dailyStartTime ?? "09:00",
     dailyEndTime: comp.dailyEndTime ?? "18:00",
     holidayRule: comp.holidayRule ?? "NONE",
+    questionMode: comp.questionMode ?? "DAILY",
     durationDays: comp.durationDays,
     scoring: comp.scoring,
     tieBreakers: comp.tieBreakers,

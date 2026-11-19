@@ -32,6 +32,7 @@ export default async function NewCompetitionPage() {
           dailyStartTime: "09:00",
           dailyEndTime: "18:00",
           holidayRule: "NONE",
+          questionMode: "DAILY",
           startLocalDate: start,
           timezone: d.timezone,
           durationDays: d.durationDays,

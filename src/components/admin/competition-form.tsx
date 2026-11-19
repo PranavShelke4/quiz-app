@@ -11,6 +11,7 @@ import { ApiClientError, api } from "@/lib/api/client";
 import { TIE_BREAKERS, TIE_BREAKER_LABELS, type TieBreaker } from "@/lib/leaderboard/ranking";
 import { MAX_TIME_LIMIT_SECONDS, MIN_TIME_LIMIT_SECONDS, type AntiCheatSettings } from "@/lib/quiz/anticheat-config";
 import { HOLIDAY_RULES, HOLIDAY_RULE_LABELS, localDateForDay, type HolidayRule } from "@/lib/competition/schedule";
+import { QUESTION_MODES, QUESTION_MODE_LABELS, type QuestionMode } from "@/lib/quiz/question-mode";
 import { COMMON_TIME_ZONES, isValidLocalDate } from "@/lib/time/zoned";
 
 export interface CompetitionFormValues {
@@ -20,6 +21,7 @@ export interface CompetitionFormValues {
   dailyStartTime: string;
   dailyEndTime: string;
   holidayRule: HolidayRule;
+  questionMode: QuestionMode;
   startLocalDate: string;
   timezone: string;
   durationDays: number;
@@ -88,6 +90,7 @@ export function CompetitionForm({
           name: v.name,
           description: v.description,
           holidayRule: v.holidayRule,
+          questionMode: v.questionMode,
           ruleSections,
           antiCheat: v.antiCheat,
           leaderboardRevealMode: v.leaderboardRevealMode,
@@ -175,6 +178,18 @@ export function CompetitionForm({
             <Select id="holidayRule" value={v.holidayRule} onChange={(e) => set("holidayRule", e.target.value as HolidayRule)}>
               {HOLIDAY_RULES.map((r) => (
                 <option key={r} value={r}>{HOLIDAY_RULE_LABELS[r]}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field
+            id="questionMode"
+            label="Which question each person gets"
+            error={errors.questionMode}
+            hint="Random: everyone gets a different question each day, never repeated. Needs at least as many published questions as days."
+          >
+            <Select id="questionMode" value={v.questionMode} onChange={(e) => set("questionMode", e.target.value as QuestionMode)}>
+              {QUESTION_MODES.map((m) => (
+                <option key={m} value={m}>{QUESTION_MODE_LABELS[m]}</option>
               ))}
             </Select>
           </Field>

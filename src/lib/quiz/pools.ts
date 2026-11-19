@@ -14,6 +14,16 @@ export function variantIndexFor(params: { competitionId: string; dayNumber: numb
   return digest.readUInt32BE(0) % params.count;
 }
 
+/**
+ * The whole question bank in this participant's own fixed shuffled order (RANDOM mode):
+ * sorted by a hash of (competition, user, question id), so adding a question only inserts
+ * it somewhere in the order instead of reshuffling everything.
+ */
+export function bankOrderFor<T extends { _id: unknown }>(bank: readonly T[], params: { competitionId: string; userId: string }): T[] {
+  const key = (q: T) => createHash("sha256").update(`${params.competitionId}:${params.userId}:${String(q._id)}`).digest("hex");
+  return bank.map((q) => [key(q), q] as const).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)).map(([, q]) => q);
+}
+
 /** Picks this participant's version from the day's versions (sorted by variant). */
 export function pickForParticipant<T>(versions: readonly T[], params: { competitionId: string; dayNumber: number; userId: string }): T | undefined {
   if (!versions.length) return undefined;

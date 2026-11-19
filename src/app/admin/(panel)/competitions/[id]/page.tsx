@@ -82,6 +82,7 @@ export default async function CompetitionDetailPage({ params }: PageProps<"/admi
             dailyStartTime: c.dailyStartTime ?? "09:00",
             dailyEndTime: c.dailyEndTime ?? "18:00",
             holidayRule: c.holidayRule ?? "NONE",
+            questionMode: c.questionMode ?? "DAILY",
             startLocalDate: c.startLocalDate,
             timezone: c.timezone,
             durationDays: c.durationDays,

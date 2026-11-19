@@ -57,6 +57,8 @@ export type AdminQuestionDTO = ReturnType<typeof toAdminQuestion>;
  */
 export function isQuestionLocked(comp: ICompetition, dayNumber: number, at: Date = now()): boolean {
   if (comp.status === "COMPLETED" || comp.status === "ARCHIVED") return true;
+  // RANDOM mode serves any question from day 1 on, so every question locks at the start.
+  if (comp.questionMode === "RANDOM") return getDayAccess(comp, 1, at) !== "UPCOMING";
   if (dayNumber > comp.durationDays) return false;
   return getDayAccess(comp, dayNumber, at) !== "UPCOMING";
 }

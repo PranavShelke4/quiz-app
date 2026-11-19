@@ -103,7 +103,7 @@ async function main() {
     }
     const attempt = await QuizAttempt.findOne({ competitionId: comp._id, userId: user._id, dayNumber: day }).lean();
     const questionId = attempt?.questionId ?? existing?.questionId ?? null;
-    const question = questionId ? await Question.findById(questionId).lean() : await questionForParticipant(comp._id, day, user._id);
+    const question = questionId ? await Question.findById(questionId).lean() : await questionForParticipant(comp, day, user._id);
     if (!question) {
       console.log(`- ${email}: SKIP — no question found for day ${day}`);
       continue;

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isValidLocalDate, isValidTimeZone } from "@/lib/time/zoned";
 import { HOLIDAY_RULES } from "@/lib/competition/schedule";
+import { QUESTION_MODES } from "@/lib/quiz/question-mode";
 import { TIE_BREAKERS } from "@/lib/leaderboard/ranking";
 import { ATTEMPT_EVENTS, MAX_TIME_LIMIT_SECONDS, MIN_TIME_LIMIT_SECONDS } from "@/lib/quiz/anticheat-config";
 
@@ -104,6 +105,7 @@ export const competitionBaseSchema = z.object({
     .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm (e.g. 18:00)")
     .optional(),
   holidayRule: z.enum(HOLIDAY_RULES).optional(),
+  questionMode: z.enum(QUESTION_MODES).optional(),
   slug: z
     .string()
     .trim()

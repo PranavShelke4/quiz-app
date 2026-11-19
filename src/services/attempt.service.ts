@@ -190,7 +190,7 @@ export async function startAttempt(params: { userId: Types.ObjectId; sessionId: 
 
   const existing = await QuizAttempt.findOne({ competitionId: comp._id, userId: params.userId, dayNumber }).lean();
   // A running attempt keeps its question; a new one gets this participant's pool version.
-  const question = existing ? await Question.findById(existing.questionId).lean() : await questionForParticipant(comp._id, dayNumber, params.userId);
+  const question = existing ? await Question.findById(existing.questionId).lean() : await questionForParticipant(comp, dayNumber, params.userId);
   if (!question) throw new AppError("QUESTION_NOT_AVAILABLE");
   if (existing) {
     const current = await expireIfDue(comp, existing, at);
