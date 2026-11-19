@@ -12,6 +12,11 @@ const schema = z.object({
   NEXT_PUBLIC_APP_URL: z.url().default("http://localhost:3000"),
   CRON_SECRET: z.string().optional().default(""),
   ADMIN_SETUP_SECRET: z.string().optional().default(""),
+  // Web push. Optional: without both keys push is simply turned off (no prompt, no sending).
+  VAPID_PUBLIC_KEY: z.string().optional().default(""),
+  VAPID_PRIVATE_KEY: z.string().optional().default(""),
+  /** Contact for push services: "mailto:…" or an https URL. Defaults to the app URL. */
+  VAPID_SUBJECT: z.string().optional().default(""),
   TRUST_PROXY: z
     .enum(["true", "false"])
     .default("false")

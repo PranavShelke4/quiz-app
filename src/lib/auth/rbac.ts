@@ -13,6 +13,7 @@ export const PERMISSIONS = [
   "corrections:manage",
   "flags:manage",
   "exports:generate",
+  "notifications:send",
   // SUPER_ADMIN only
   "admins:manage",
   "settings:update:sensitive",
@@ -35,6 +36,7 @@ const ADMIN_PERMISSIONS: Permission[] = [
   "corrections:manage",
   "flags:manage",
   "exports:generate",
+  "notifications:send",
 ];
 
 const ROLE_PERMISSIONS: Record<Role, ReadonlySet<Permission>> = {

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Wrench } from "lucide-react";
+import { PushPrompt } from "@/components/push-prompt";
 import { SiteFooter, SiteHeader } from "@/components/site-header";
 import { EmptyState } from "@/components/ui/primitives";
 import { requireUser } from "@/lib/auth/dal";
@@ -24,6 +25,7 @@ export default async function UserLayout({ children }: { children: React.ReactNo
         )}
       </main>
       <SiteFooter />
+      {!maintenance && <PushPrompt />}
     </>
   );
 }

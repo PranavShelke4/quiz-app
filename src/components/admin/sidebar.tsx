@@ -2,6 +2,7 @@
 
 import {
   BarChart3,
+  Bell,
   ClipboardList,
   FileQuestion,
   Flag,
@@ -29,6 +30,7 @@ const NAV = [
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/answers", label: "Answers", icon: ClipboardList },
   { href: "/admin/flags", label: "Review flags", icon: Flag },
+  { href: "/admin/notifications", label: "Notifications", icon: Bell },
   { href: "/admin/leaderboard", label: "Leaderboard", icon: Trophy },
   { href: "/admin/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/admin/audit-logs", label: "Audit Logs", icon: ScrollText, superOnly: true },
