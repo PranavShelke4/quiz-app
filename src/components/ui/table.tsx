@@ -1,12 +1,21 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { HTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from "react";
+import { ResponsiveTable } from "@/components/ui/responsive-table";
 import { cn } from "@/lib/utils";
 
-export function Table({ className, ...props }: HTMLAttributes<HTMLTableElement>) {
+/**
+ * `mobile="stack"` (default): on phones each row becomes a labelled card, so no column
+ * (e.g. Actions) is hidden off-screen. `mobile="scroll"`: keep the table and scroll sideways.
+ */
+export function Table({ className, mobile = "stack", ...props }: HTMLAttributes<HTMLTableElement> & { mobile?: "stack" | "scroll" }) {
   return (
     <div className="w-full overflow-x-auto">
-      <table className={cn("w-full caption-bottom text-sm", className)} {...props} />
+      {mobile === "stack" ? (
+        <ResponsiveTable className={className} {...props} />
+      ) : (
+        <table className={cn("w-full caption-bottom text-sm", className)} {...props} />
+      )}
     </div>
   );
 }

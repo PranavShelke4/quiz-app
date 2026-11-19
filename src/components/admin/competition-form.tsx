@@ -131,7 +131,7 @@ export function CompetitionForm({
 
       <Card>
         <CardHeader><CardTitle>Details</CardTitle></CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <Field id="name" label="Name" error={errors.name} className="md:col-span-2">
             <Input id="name" value={v.name} onChange={(e) => set("name", e.target.value)} required maxLength={100} placeholder="October Daily Challenge" />
           </Field>
@@ -146,7 +146,7 @@ export function CompetitionForm({
 
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2">Schedule {lockNote}</CardTitle></CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-3">
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Field id="startLocalDate" label="Start date (Day 1)" error={errors.startLocalDate}>
             <Input id="startLocalDate" type="date" value={v.startLocalDate} onChange={(e) => set("startLocalDate", e.target.value)} disabled={started} required />
           </Field>
@@ -187,7 +187,7 @@ export function CompetitionForm({
 
       <Card>
         <CardHeader><CardTitle className="flex items-center gap-2">Scoring {lockNote}</CardTitle></CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-3">
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Field id="points" label="Points per correct answer" error={errors.scoring}>
             <Input id="points" type="number" min={1} max={100} value={v.scoring.pointsPerCorrectAnswer} disabled={started}
               onChange={(e) => set("scoring", { ...v.scoring, pointsPerCorrectAnswer: Number(e.target.value) })} />
@@ -206,7 +206,7 @@ export function CompetitionForm({
           </Field>
           <fieldset className="md:col-span-3">
             <legend className="text-sm font-medium">Tie-breakers (applied in this order after total score)</legend>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {TIE_BREAKERS.map((tb) => {
                 const idx = v.tieBreakers.indexOf(tb);
                 return (
@@ -227,7 +227,7 @@ export function CompetitionForm({
 
       <Card>
         <CardHeader><CardTitle>Registration & leaderboard</CardTitle></CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="flex flex-col gap-1.5">
             <span className="text-sm font-medium">Registration</span>
             <label className="flex h-10 items-center gap-2 text-sm">

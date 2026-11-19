@@ -130,7 +130,7 @@ export default async function LeaderboardPage({ searchParams }: PageProps<"/lead
           </CardContent>
         ) : (
           <>
-            <Table>
+            <Table mobile="scroll">
               <THead>
                 <tr>
                   <TH className="w-20">Rank</TH>
@@ -205,7 +205,7 @@ export default async function LeaderboardPage({ searchParams }: PageProps<"/lead
               <span className="text-xs text-muted-foreground">Ranked by average score</span>
             </div>
           </CardHeader>
-          <Table>
+          <Table mobile="scroll">
             <THead>
               <tr>
                 <TH className="w-16">Rank</TH>

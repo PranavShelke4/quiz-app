@@ -36,7 +36,7 @@ export default async function AnalyticsPage({ searchParams }: PageProps<"/admin/
       {a.participation.days.length === 0 ? (
         <EmptyState icon={<BarChart3 />} title="No data yet" description="Charts fill in once the competition starts." />
       ) : (
-        <div className="grid gap-6 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <Card>
             <CardHeader><CardTitle>Daily participation</CardTitle><CardDescription>Share of registered participants answering each day.</CardDescription></CardHeader>
             <CardContent><PercentLineChart data={a.participation.days} label="Daily participation percentage" /></CardContent>

@@ -39,7 +39,7 @@ export function SettingsForm({ initial, isSuper }: { initial: PlatformSettings; 
     <div className="space-y-6">
       <Card>
         <CardHeader><CardTitle>Competition defaults</CardTitle><CardDescription>Pre-filled when creating a competition.</CardDescription></CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-3">
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Field id="d-dur" label="Default duration (days)">
             <Input id="d-dur" type="number" min={1} max={90} value={s.competitionDefaults.durationDays} onChange={(e) => setS({ ...s, competitionDefaults: { ...s.competitionDefaults, durationDays: num(e.target.value) } })} />
           </Field>
@@ -56,7 +56,7 @@ export function SettingsForm({ initial, isSuper }: { initial: PlatformSettings; 
 
       <Card>
         <CardHeader><CardTitle>Notifications</CardTitle></CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2">
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <label className="flex items-center gap-2 text-sm"><Checkbox checked={s.notifications.dailyReminderEnabled} onChange={(e) => setS({ ...s, notifications: { ...s.notifications, dailyReminderEnabled: e.target.checked } })} /> Daily reminder</label>
           <Field id="n-hour" label="Daily reminder hour (competition time)">
             <Input id="n-hour" type="number" min={0} max={23} value={s.notifications.dailyReminderHour} onChange={(e) => setS({ ...s, notifications: { ...s.notifications, dailyReminderHour: num(e.target.value) } })} />
@@ -75,7 +75,7 @@ export function SettingsForm({ initial, isSuper }: { initial: PlatformSettings; 
         <CardHeader>
           <CardTitle className="flex items-center gap-2">Security & platform {lock && <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground"><Lock className="size-3" aria-hidden /> Super admin only</span>}</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-3">
+        <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {([
             ["sessionMaxDays", "Session lifetime (days)", 1, 90],
             ["sessionIdleDays", "Idle timeout (days)", 1, 90],

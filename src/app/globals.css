@@ -111,6 +111,71 @@
   }
 }
 
+/*
+ * Stacked tables on phones (<Table mobile="stack">): each row is a card, each cell a
+ * "label · value" line. The rules live in the components layer so utilities such as
+ * `hidden md:table-cell` still win (columns hidden on mobile stay hidden); only the
+ * compact cell padding below is unlayered so it overrides the cells' py-3.
+ */
+@media (max-width: 767.98px) {
+  .rtable > tbody > tr > td {
+    padding-top: 0.3rem;
+    padding-bottom: 0.3rem;
+  }
+}
+@layer components {
+@media (max-width: 767.98px) {
+  :where(.rtable),
+  :where(.rtable) > tbody {
+    display: block;
+  }
+  :where(.rtable) > thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  :where(.rtable) > tbody > tr {
+    display: block;
+    padding: 0.5rem 0;
+  }
+  :where(.rtable > tbody > tr) > td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  :where(.rtable > tbody > tr) > td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    max-width: 45%;
+    text-align: left;
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+  /* Unlabelled cells (checkbox, actions, empty-state rows) span the card. */
+  :where(.rtable > tbody > tr) > td:is([data-label=""], :not([data-label])) {
+    justify-content: flex-start;
+    text-align: left;
+  }
+  :where(.rtable > tbody > tr) > td:is([data-label=""], :not([data-label]))::before {
+    content: none;
+  }
+  /* Action buttons wrap instead of overflowing. */
+  :where(.rtable > tbody > tr > td) > div {
+    flex-wrap: wrap;
+  }
+}
+}
+
 /* Thin red-to-orange brand stripe (top of header, auth panel). */
 .brand-stripe {
   background: var(--brand-gradient);

@@ -275,7 +275,7 @@ export function QuestionManager({ comp, questions }: { comp: CompInfo; questions
           <div className="space-y-4">
             <p className="text-lg font-semibold">{preview.questionText}</p>
             {keyOf(preview).length > 1 && <p className="text-sm font-medium text-primary">Select all that apply — every correct option is needed to score.</p>}
-            <div className="grid gap-2">
+            <div className="grid grid-cols-1 gap-2">
               {preview.options.map((o) => (
                 <div key={o.id} className="flex items-center gap-3 rounded-xl border px-4 py-3">
                   <span className="flex size-8 items-center justify-center rounded-lg bg-muted text-sm font-semibold">{o.id}</span>
@@ -400,7 +400,7 @@ function QuestionEditor({
     >
       <div className="space-y-4">
         {formError && <Alert tone="danger">{formError}</Alert>}
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Field
             id="q-day"
             label="Day"
@@ -457,7 +457,7 @@ function QuestionEditor({
           </div>
           {d.correctOptionIds.length === 0 && <p className="text-xs text-warning">Tick at least one correct option.</p>}
         </fieldset>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field id="q-cat" label="Category" error={errors.category}>
             <Input id="q-cat" value={d.category} maxLength={60} onChange={(e) => setD({ ...d, category: e.target.value })} />
           </Field>
