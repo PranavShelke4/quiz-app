@@ -24,6 +24,14 @@ export interface ScheduleInput {
   dailyEndTime?: string; // "18:00"
   /** Dates with no question. "BANK": every Sunday plus the 2nd and 4th Saturday of the month. */
   holidayRule?: HolidayRule;
+  /** Extra YYYY-MM-DD dates with no question, chosen by an admin. */
+  customHolidays?: readonly string[];
+}
+
+type HolidayConfig = Pick<ScheduleInput, "holidayRule" | "customHolidays">;
+
+function hasHolidays(c: HolidayConfig): boolean {
+  return (!!c.holidayRule && c.holidayRule !== "NONE") || !!c.customHolidays?.length;
 }
 
 export const HOLIDAY_RULES = ["NONE", "BANK"] as const;
@@ -39,7 +47,8 @@ function weekdayOf(localDate: LocalDate): number {
   return new Date(Date.UTC(y!, m! - 1, d!)).getUTCDay();
 }
 
-export function isHoliday(localDate: LocalDate, rule: HolidayRule | undefined): boolean {
+export function isHoliday(localDate: LocalDate, rule: HolidayRule | undefined, customHolidays?: readonly string[]): boolean {
+  if (customHolidays?.includes(localDate)) return true;
   if (!rule || rule === "NONE") return false;
   const weekday = weekdayOf(localDate);
   if (weekday === 0) return true;
@@ -51,12 +60,12 @@ export function isHoliday(localDate: LocalDate, rule: HolidayRule | undefined): 
 }
 
 /** Calendar date of quiz day N (1-based), skipping holidays. */
-export function localDateForDay(input: Pick<ScheduleInput, "holidayRule">, start: LocalDate, dayNumber: number): LocalDate {
-  if (!input.holidayRule || input.holidayRule === "NONE") return addDaysToLocalDate(start, dayNumber - 1);
+export function localDateForDay(input: HolidayConfig, start: LocalDate, dayNumber: number): LocalDate {
+  if (!hasHolidays(input)) return addDaysToLocalDate(start, dayNumber - 1);
   let date = start;
   let count = 0;
   for (;;) {
-    if (!isHoliday(date, input.holidayRule)) {
+    if (!isHoliday(date, input.holidayRule, input.customHolidays)) {
       count++;
       if (count === dayNumber) return date;
     }
@@ -68,13 +77,13 @@ export function localDateForDay(input: Pick<ScheduleInput, "holidayRule">, start
  * Quiz day for a calendar date: the day whose date it is, or — on a holiday — the next
  * quiz day (still upcoming). Can exceed durationDays; callers clamp.
  */
-function dayForLocalDate(input: Pick<ScheduleInput, "holidayRule">, start: LocalDate, date: LocalDate): number {
+function dayForLocalDate(input: HolidayConfig, start: LocalDate, date: LocalDate): number {
   const elapsed = diffLocalDates(start, date);
-  if (!input.holidayRule || input.holidayRule === "NONE") return elapsed + 1;
+  if (!hasHolidays(input)) return elapsed + 1;
   if (elapsed < 0) return 1;
   let count = 0;
-  for (let i = 0; i <= elapsed; i++) if (!isHoliday(addDaysToLocalDate(start, i), input.holidayRule)) count++;
-  return isHoliday(date, input.holidayRule) ? count + 1 : count;
+  for (let i = 0; i <= elapsed; i++) if (!isHoliday(addDaysToLocalDate(start, i), input.holidayRule, input.customHolidays)) count++;
+  return isHoliday(date, input.holidayRule, input.customHolidays) ? count + 1 : count;
 }
 
 export type CompetitionPhase = "NOT_STARTED" | "ACTIVE" | "ENDED";
@@ -113,8 +122,14 @@ export function computeStartDate(localDate: LocalDate, timezone: string): Date {
 }
 
 /** Exclusive end instant: local midnight after the final quiz day. */
-export function computeEndDate(localStartDate: LocalDate, durationDays: number, timezone: string, holidayRule?: HolidayRule): Date {
-  return startOfLocalDay(addDaysToLocalDate(localDateForDay({ holidayRule }, localStartDate, durationDays), 1), timezone);
+export function computeEndDate(
+  localStartDate: LocalDate,
+  durationDays: number,
+  timezone: string,
+  holidayRule?: HolidayRule,
+  customHolidays?: readonly string[],
+): Date {
+  return startOfLocalDay(addDaysToLocalDate(localDateForDay({ holidayRule, customHolidays }, localStartDate, durationDays), 1), timezone);
 }
 
 function parseHourMinute(timeStr?: string, defaultHour = 9, defaultMinute = 0): { hour: number; minute: number } {
@@ -175,7 +190,7 @@ export function getCompetitionClock(input: ScheduleInput, at: Date): Competition
     currentDay,
     lastClosedDay,
     today,
-    holidayToday: isHoliday(localDateInZone(at, input.timezone), input.holidayRule),
+    holidayToday: isHoliday(localDateInZone(at, input.timezone), input.holidayRule, input.customHolidays),
     daysRemaining: Math.max(0, input.durationDays - currentDay),
   };
 }

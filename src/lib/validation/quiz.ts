@@ -105,6 +105,7 @@ export const competitionBaseSchema = z.object({
     .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm (e.g. 18:00)")
     .optional(),
   holidayRule: z.enum(HOLIDAY_RULES).optional(),
+  customHolidays: z.array(localDateSchema).max(366).optional(),
   questionMode: z.enum(QUESTION_MODES).optional(),
   slug: z
     .string()

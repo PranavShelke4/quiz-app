@@ -56,7 +56,7 @@ export function ruleSectionsOf(comp: Pick<ICompetition, "rules"> & { ruleSection
 }
 
 export function clockFor(
-  comp: Pick<ICompetition, "startDate" | "durationDays" | "timezone"> & Partial<Pick<ICompetition, "dailyStartTime" | "dailyEndTime" | "holidayRule">>,
+  comp: Pick<ICompetition, "startDate" | "durationDays" | "timezone"> & Partial<Pick<ICompetition, "dailyStartTime" | "dailyEndTime" | "holidayRule" | "customHolidays">>,
   at: Date = now(),
 ): CompetitionClock {
   return getCompetitionClock(
@@ -67,6 +67,7 @@ export function clockFor(
       dailyStartTime: comp.dailyStartTime ?? "09:00",
       dailyEndTime: comp.dailyEndTime ?? "18:00",
       holidayRule: comp.holidayRule ?? "NONE",
+      customHolidays: comp.customHolidays ?? [],
     },
     at,
   );
@@ -270,9 +271,9 @@ async function uniqueSlug(base: string, excludeId?: Types.ObjectId) {
   return slug;
 }
 
-function deriveSchedule(input: Pick<CompetitionInput, "startLocalDate" | "timezone" | "durationDays" | "holidayRule">) {
+function deriveSchedule(input: Pick<CompetitionInput, "startLocalDate" | "timezone" | "durationDays" | "holidayRule" | "customHolidays">) {
   const startDate = computeStartDate(input.startLocalDate, input.timezone);
-  const endDate = computeEndDate(input.startLocalDate, input.durationDays, input.timezone, input.holidayRule ?? "NONE");
+  const endDate = computeEndDate(input.startLocalDate, input.durationDays, input.timezone, input.holidayRule ?? "NONE", input.customHolidays);
   return { startDate, endDate };
 }
 
@@ -300,6 +301,7 @@ function buildDoc(input: CompetitionInput) {
     dailyStartTime: input.dailyStartTime || "09:00",
     dailyEndTime: input.dailyEndTime || "18:00",
     holidayRule: input.holidayRule ?? "NONE",
+    customHolidays: [...new Set(input.customHolidays ?? [])].sort(),
     questionMode: input.questionMode ?? "DAILY",
     description: input.description,
     startDate,
@@ -334,7 +336,7 @@ export async function createCompetition(input: CompetitionInput, actor: Actor): 
 }
 
 /** Fields that may change after the competition has started. */
-const SAFE_AFTER_START = new Set(["holidayRule", "questionMode", "name", "category", "description", "rules", "ruleSections", "antiCheat", "leaderboardRevealMode", "leaderboardRevealLocalDateTime", "registrationOpen", "registrationCloseLocalDate"]);
+const SAFE_AFTER_START = new Set(["holidayRule", "customHolidays", "questionMode", "name", "category", "description", "rules", "ruleSections", "antiCheat", "leaderboardRevealMode", "leaderboardRevealLocalDateTime", "registrationOpen", "registrationCloseLocalDate"]);
 
 export async function updateCompetition(id: string, input: Partial<CompetitionInput>, actor: Actor): Promise<ICompetition> {
   await connectDb();
@@ -355,6 +357,7 @@ export async function updateCompetition(id: string, input: Partial<CompetitionIn
     dailyStartTime: input.dailyStartTime ?? comp.dailyStartTime ?? "09:00",
     dailyEndTime: input.dailyEndTime ?? comp.dailyEndTime ?? "18:00",
     holidayRule: input.holidayRule ?? comp.holidayRule ?? "NONE",
+    customHolidays: input.customHolidays ?? comp.customHolidays ?? [],
     questionMode: input.questionMode ?? comp.questionMode ?? "DAILY",
     description: input.description ?? comp.description,
     startLocalDate: input.startLocalDate ?? localDateInZone(comp.startDate, comp.timezone),
@@ -383,15 +386,21 @@ export async function updateCompetition(id: string, input: Partial<CompetitionIn
   };
   const doc = buildDoc(merged);
 
-  // A running competition may adopt (or drop) a holiday rule only if no day that has already
-  // opened moves: past and current days keep their dates; only later days shift.
-  const holidayChanged = (comp.holidayRule ?? "NONE") !== doc.holidayRule;
+  // A running competition may change its holidays only if no day that has already opened
+  // moves: opened days keep their dates; only later days shift.
+  const holidayChanged =
+    (comp.holidayRule ?? "NONE") !== doc.holidayRule ||
+    [...(comp.customHolidays ?? [])].sort().join() !== doc.customHolidays.join();
   if (started && holidayChanged) {
-    const clock = clockFor(comp);
-    const fixedThrough = clock.phase === "ENDED" ? comp.durationDays : Math.max(clock.lastClosedDay, clock.currentDay ?? 0);
-    for (let d = 1; d <= fixedThrough; d++) {
-      if (getDayWindow(comp, d).localDate !== getDayWindow({ ...comp, holidayRule: doc.holidayRule }, d).localDate) {
-        throw new AppError("COMPETITION_LOCKED", `This holiday rule would move day ${d}, which has already opened, so it can't be applied now.`, { fields: ["holidayRule"] });
+    const at = now();
+    const next = { ...comp, holidayRule: doc.holidayRule, customHolidays: doc.customHolidays };
+    for (let d = 1; d <= comp.durationDays; d++) {
+      const before = getDayWindow(comp, d);
+      if (before.opensAt.getTime() > at.getTime()) break;
+      if (before.localDate !== getDayWindow(next, d).localDate) {
+        throw new AppError("COMPETITION_LOCKED", `This holiday change would move day ${d} (${before.localDate}), which has already opened, so it can't be applied now.`, {
+          fields: ["holidayRule", "customHolidays"],
+        });
       }
     }
   }
@@ -416,7 +425,7 @@ function toLocalDateTimeInput(date: Date, timezone: string) {
   return `${local}T${time}`;
 }
 
-export async function resyncQuestionSchedule(comp: Pick<ICompetition, "_id" | "startDate" | "durationDays" | "timezone" | "holidayRule">, session?: ClientSession) {
+export async function resyncQuestionSchedule(comp: Pick<ICompetition, "_id" | "startDate" | "durationDays" | "timezone" | "holidayRule" | "customHolidays">, session?: ClientSession) {
   const questions = await Question.find({ competitionId: comp._id }).select("dayNumber").session(session ?? null).lean();
   if (!questions.length) return;
   await Question.bulkWrite(
@@ -527,6 +536,7 @@ export function toAdminCompetition(comp: ICompetition, at: Date = now()) {
     dailyStartTime: comp.dailyStartTime ?? "09:00",
     dailyEndTime: comp.dailyEndTime ?? "18:00",
     holidayRule: comp.holidayRule ?? "NONE",
+    customHolidays: [...(comp.customHolidays ?? [])],
     questionMode: comp.questionMode ?? "DAILY",
     durationDays: comp.durationDays,
     scoring: comp.scoring,

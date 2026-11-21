@@ -150,3 +150,22 @@ describe("holiday rule: BANK (every Sunday + 2nd & 4th Saturday)", () => {
     for (let d = 1; d <= 38; d++) expect(isHoliday(dateOf(d), "BANK")).toBe(false);
   });
 });
+
+describe("custom holiday dates", () => {
+  const input = { startDate: kolkata("2026-11-16"), durationDays: 10, timezone: "Asia/Kolkata", dailyStartTime: "09:00", dailyEndTime: "23:59", holidayRule: "BANK" as const, customHolidays: ["2026-11-18", "2026-11-25"] };
+  const dateOf = (d: number) => getDayWindow(input, d).localDate;
+
+  it("skips admin-picked dates on top of the holiday rule", () => {
+    expect([1, 2, 3].map(dateOf)).toEqual(["2026-11-16", "2026-11-17", "2026-11-19"]);
+    expect(dateOf(6)).toBe("2026-11-23"); // Sun 22 skipped by BANK
+    expect(dateOf(8)).toBe("2026-11-26"); // Wed 25 skipped by custom date
+  });
+
+  it("works without a holiday rule", () => {
+    const plain = { ...input, holidayRule: "NONE" as const };
+    expect(getDayWindow(plain, 3).localDate).toBe("2026-11-19");
+    const clock = getCompetitionClock(plain, kolkata("2026-11-18", "12:00:00"));
+    expect(clock).toMatchObject({ currentDay: 3, holidayToday: true });
+    expect(computeEndDate("2026-11-16", 10, "Asia/Kolkata", "NONE", plain.customHolidays).toISOString()).toBe(kolkata("2026-11-28").toISOString());
+  });
+});

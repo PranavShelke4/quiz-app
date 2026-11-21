@@ -22,6 +22,8 @@ export interface ICompetition {
   dailyEndTime: string;
   /** Dates with no question; the remaining quiz days move to the next working dates. */
   holidayRule?: HolidayRule;
+  /** Admin-picked YYYY-MM-DD dates (in `timezone`) with no question, on top of holidayRule. */
+  customHolidays?: string[];
   /**
    * DAILY: day N's question (or one of its pool versions) for everyone.
    * RANDOM: each participant gets a random, never-repeated question from the whole bank.
@@ -83,6 +85,7 @@ const CompetitionSchema = new Schema<ICompetition>(
     dailyStartTime: { type: String, default: "09:00", trim: true },
     dailyEndTime: { type: String, default: "18:00", trim: true },
     holidayRule: { type: String, enum: HOLIDAY_RULES, default: "NONE" },
+    customHolidays: { type: [String], default: [] },
     questionMode: { type: String, enum: QUESTION_MODES, default: "DAILY" },
     slug: { type: String, required: true, lowercase: true, trim: true, maxlength: 80 },
     description: { type: String, default: "", maxlength: 2000 },
