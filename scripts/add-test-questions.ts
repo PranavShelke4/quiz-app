@@ -10,7 +10,7 @@ async function main() {
 
   // Find competition - preferentially by slug if passed or the most recently created
   const slugArg = process.argv.slice(2).find((a) => !a.startsWith("-"));
-  let comp = slugArg
+  const comp = slugArg
     ? await Competition.findOne({ slug: slugArg })
     : await Competition.findOne().sort({ createdAt: -1 });
 
