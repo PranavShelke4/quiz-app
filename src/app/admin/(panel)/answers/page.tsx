@@ -62,26 +62,27 @@ export default async function AdminAnswersPage({ searchParams }: PageProps<"/adm
                 <TH className="hidden md:table-cell">Correct</TH>
                 <TH>Result</TH>
                 <TH className="text-right">Score</TH>
-                <TH className="hidden lg:table-cell">Timestamp</TH>
-              </tr>
+                <TH className="hidden lg:table-cell">Timestamp</TH>              </tr>
             </THead>
             <TBody>
               {items.map((a) => (
                 <TR key={a.id}>
                   <TD>
-                    <Link href={`/admin/users/${a.userId}`} className="font-medium hover:underline">{a.userName}</Link>
-                    <p className="text-xs text-muted-foreground">{a.competition}</p>
+                    <div className="min-w-0 text-right md:text-left">
+                      <Link href={`/admin/users/${a.userId}`} className="font-medium hover:underline">{a.userName}</Link>
+                      <p className="text-xs text-muted-foreground">{a.competition}</p>
+                    </div>
                   </TD>
                   <TD className="tabular-nums">{a.dayNumber}</TD>
-                  <TD className="hidden max-w-xs xl:table-cell"><p className="line-clamp-2 text-xs">{a.question}</p></TD>
-                  <TD className="max-w-40 truncate text-xs">{a.selectedAnswer || "—"}</TD>
-                  <TD className="hidden max-w-40 truncate text-xs md:table-cell">{a.correctAnswer}</TD>
+                  <TD className="md:hidden xl:table-cell xl:max-w-xs"><p className="line-clamp-3 text-xs md:line-clamp-2">{a.question}</p></TD>
+                  <TD className="text-xs md:max-w-40 md:truncate">{a.selectedAnswer || "—"}</TD>
+                  <TD className="text-xs md:max-w-40 md:truncate">{a.correctAnswer}</TD>
                   <TD>
                     {a.status === "MISSED" ? <Badge>Missed</Badge> : a.isCorrect ? <Badge tone="success">Correct</Badge> : <Badge tone="danger">Incorrect</Badge>}
                     {a.corrected && <Badge tone="warning" className="ml-1">Corrected</Badge>}
                   </TD>
                   <TD className="text-right tabular-nums">{a.score}</TD>
-                  <TD className="hidden text-xs lg:table-cell">{formatDateTime(a.answeredAt ?? a.createdAt)}</TD>
+                  <TD className="text-xs md:hidden lg:table-cell">{formatDateTime(a.answeredAt ?? a.createdAt)}</TD>
                 </TR>
               ))}
             </TBody>
