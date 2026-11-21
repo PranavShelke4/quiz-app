@@ -15,7 +15,10 @@ const g = globalThis as typeof globalThis & { __mongoose?: Cache };
 const cache: Cache = (g.__mongoose ??= { conn: null, promise: null });
 
 mongoose.set("strictQuery", true);
-mongoose.set("autoIndex", true);
+// Indexes are created by runMigrations only when the schema's index list changes, instead of
+// ~50 createIndex/createCollection commands on every serverless cold start.
+mongoose.set("autoIndex", false);
+mongoose.set("autoCreate", false);
 
 export async function connectDb(): Promise<typeof mongoose> {
   if (cache.conn && mongoose.connection.readyState === 1) return cache.conn;

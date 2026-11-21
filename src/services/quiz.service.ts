@@ -10,7 +10,7 @@ import { now } from "@/lib/time/clock";
 import type { OptionId } from "@/lib/validation/quiz";
 import type { ICompetition } from "@/models/Competition";
 import { CompetitionParticipant } from "@/models/CompetitionParticipant";
-import { DailyAnswer } from "@/models/DailyAnswer";
+import { DailyAnswer, type IDailyAnswer } from "@/models/DailyAnswer";
 import { Question, type IQuestion } from "@/models/Question";
 import { QuizAttempt } from "@/models/QuizAttempt";
 import { User } from "@/models/User";
@@ -28,6 +28,7 @@ import {
   currentAttempt,
   displayMapping,
   displayOptions,
+  expireIfDue,
   lockAttempt,
   makeupWindow,
   pendingMakeupDays,
@@ -136,6 +137,7 @@ async function loadMakeup(
   currentDay: number,
   at: Date,
   sessionId: Types.ObjectId | null | undefined,
+  answersByDay: ReadonlyMap<number, AnswerRow>,
 ): Promise<MakeupDTO | null> {
   const ac = antiCheatOf(comp);
   if (!ac.enabled) return null;
@@ -143,8 +145,7 @@ async function loadMakeup(
   const closesAt = makeupWindow(comp).closesAt.toISOString();
   for (const [i, dayNumber] of days.entries()) {
     const remaining = days.length - i;
-    const answer = await DailyAnswer.findOne({ competitionId: comp._id, userId, dayNumber }).select("status").lean();
-    if (answer?.status === "ANSWERED") {
+    if (answersByDay.get(dayNumber)?.status === "ANSWERED") {
       await CompetitionParticipant.updateOne({ competitionId: comp._id, userId }, { $pull: { makeupDays: dayNumber } });
       continue;
     }
@@ -177,9 +178,15 @@ async function loadMakeup(
   return null;
 }
 
-async function loadProgress(comp: ICompetition, userId: Types.ObjectId, at: Date): Promise<ProgressDTO> {
+type AnswerRow = Pick<IDailyAnswer, "dayNumber" | "status" | "selectedOptionId" | "selectedOptionIds" | "answeredAt" | "questionId">;
+
+/** All of a participant's day records in one read; the quiz page derives everything from it. */
+function loadAnswers(competitionId: Types.ObjectId, userId: Types.ObjectId): Promise<AnswerRow[]> {
+  return DailyAnswer.find({ competitionId, userId }).select("dayNumber status selectedOptionId selectedOptionIds answeredAt questionId").lean();
+}
+
+function buildProgress(comp: ICompetition, answers: readonly AnswerRow[], at: Date): ProgressDTO {
   const clock = clockFor(comp, at);
-  const answers = await DailyAnswer.find({ competitionId: comp._id, userId }).select("dayNumber status").lean();
   const byDay = new Map(answers.map((a) => [a.dayNumber, a.status]));
   const days = Array.from({ length: comp.durationDays }, (_, i) => {
     const dayNumber = i + 1;
@@ -215,15 +222,25 @@ export async function getQuizState(userId: Types.ObjectId, at: Date = now(), opt
   if (!comp) return { competition: null, isParticipant: false, canJoin: false, today: null, nextQuestionAt: null, progress: null, makeup: null };
 
   const clock = clockFor(comp, at);
-  const participant = await getParticipant(comp._id, userId);
-  if (participant) await repairUserMissedDays(comp, userId, at);
+  const todayNumber = clock.phase === "ACTIVE" ? clock.currentDay : null;
+  // Independent reads in parallel: each sequential round trip adds latency to every page load.
+  const [participant, loaded, todayAttempt] = await Promise.all([
+    getParticipant(comp._id, userId),
+    loadAnswers(comp._id, userId),
+    todayNumber ? QuizAttempt.findOne({ competitionId: comp._id, userId, dayNumber: todayNumber }).lean() : null,
+  ]);
+  let answers = loaded;
+  if (participant && (await repairUserMissedDays(comp, userId, at, answers.map((a) => a.dayNumber)))) {
+    answers = await loadAnswers(comp._id, userId);
+  }
+  const answersByDay = new Map(answers.map((a) => [a.dayNumber, a]));
 
   const nowMs = at.getTime();
   const base = {
     competition: toPublicCompetition(comp, at),
     isParticipant: !!participant,
     canJoin: !participant && isRegistrationOpen(comp, at),
-    progress: participant ? await loadProgress(comp, userId, at) : null,
+    progress: participant ? buildProgress(comp, answers, at) : null,
     makeup: null as MakeupDTO | null,
   };
 
@@ -243,23 +260,21 @@ export async function getQuizState(userId: Types.ObjectId, at: Date = now(), opt
   } else if (dayNumber < comp.durationDays) {
     nextQuestionAt = getDayWindow(comp, dayNumber + 1).opensAt.toISOString();
   }
-  const makeup = participant ? await loadMakeup(comp, participant, userId, dayNumber, at, opts.sessionId) : null;
+  const makeup = participant ? await loadMakeup(comp, participant, userId, dayNumber, at, opts.sessionId, answersByDay) : null;
   const active = { ...base, nextQuestionAt, makeup };
 
   if (nowMs < todayWindow.opensAt.getTime()) {
     return { ...active, today: { status: "UPCOMING", dayNumber, opensAt, closesAt } };
   }
 
-  const answer = participant
-    ? await DailyAnswer.findOne({ competitionId: comp._id, userId, dayNumber }).select("status selectedOptionId selectedOptionIds answeredAt questionId").lean()
-    : null;
+  const answer = participant ? (answersByDay.get(dayNumber) ?? null) : null;
 
   if (nowMs >= todayWindow.closesAt.getTime() && (!answer || answer.status !== "ANSWERED")) {
     return { ...active, today: { status: "CLOSED", dayNumber, opensAt, closesAt } };
   }
 
   // Question pools: the question already answered/started wins; otherwise this participant's version.
-  const pinnedId = answer?.questionId ?? (participant ? (await QuizAttempt.findOne({ competitionId: comp._id, userId, dayNumber }).select("questionId").lean())?.questionId : null);
+  const pinnedId = answer?.questionId ?? (participant ? todayAttempt?.questionId : null);
   const question = pinnedId
     ? await Question.findById(pinnedId).lean()
     : await questionForParticipant(comp, dayNumber, userId);
@@ -268,7 +283,7 @@ export async function getQuizState(userId: Types.ObjectId, at: Date = now(), opt
   if (!participant) return { ...active, today: { status: "LOCKED", dayNumber, opensAt, closesAt } };
 
   const ac = antiCheatOf(comp);
-  const attempt = ac.enabled || answer ? await currentAttempt(comp, userId, dayNumber, at) : null;
+  const attempt = (ac.enabled || answer) && todayAttempt ? await expireIfDue(comp, todayAttempt, at) : null;
 
   if (answer?.status === "ANSWERED" && answer.selectedOptionId && answer.answeredAt) {
     if (attempt) {
@@ -403,11 +418,19 @@ export async function submitAnswer(params: {
   const clock = clockFor(comp, at);
   if (clock.phase === "NOT_STARTED") throw new AppError("COMPETITION_NOT_STARTED");
   if (clock.phase === "ENDED") throw new AppError("COMPETITION_ENDED");
-  let dayNumber = clock.currentDay!;
+  const currentDay = clock.currentDay!;
+  let dayNumber = currentDay;
+  const ac = antiCheatOf(comp);
 
-  const user = await User.findById(params.userId).select("isActive").lean();
+  // Today's attempt (timed) or question (plain) is fetched alongside the checks; a make-up
+  // day (timed only) differs from today and falls back to its own lookup below.
+  const [user, participant, todaysAttempt, todaysQuestion] = await Promise.all([
+    User.findById(params.userId).select("isActive").lean(),
+    getParticipant(comp._id, params.userId),
+    ac.enabled ? QuizAttempt.findOne({ competitionId: comp._id, userId: params.userId, dayNumber: currentDay }).lean() : null,
+    ac.enabled ? null : questionForParticipant(comp, currentDay, params.userId),
+  ]);
   if (!user || !user.isActive) throw new AppError("USER_DISABLED");
-  const participant = await getParticipant(comp._id, params.userId);
   if (!participant) throw new AppError("NOT_PARTICIPANT", "Join the competition before answering.");
 
   // An earlier day is only accepted when an operator re-opened it for this participant (timed mode).
@@ -423,14 +446,21 @@ export async function submitAnswer(params: {
 
   let picked: string[] = [...new Set(params.optionIds?.length ? params.optionIds : params.optionId ? [params.optionId] : [])];
   // Timed mode: the client sent display letters; map them to the real ids via the attempt.
-  const ac = antiCheatOf(comp);
   const timed = ac.enabled
-    ? await prepareAttemptSubmission({ comp, userId: params.userId, dayNumber, sessionId: params.sessionId ?? null, displayIds: picked, at })
+    ? await prepareAttemptSubmission({
+        comp,
+        userId: params.userId,
+        dayNumber,
+        sessionId: params.sessionId ?? null,
+        displayIds: picked,
+        at,
+        prefetched: dayNumber === currentDay ? todaysAttempt : undefined,
+      })
     : null;
   if (timed) picked = timed.realIds;
 
   // The question this participant was shown: the attempt's in timed mode, else their pool version.
-  const question = timed ? await Question.findById(timed.attempt.questionId).lean() : await questionForParticipant(comp, dayNumber, params.userId);
+  const question = timed ? await Question.findById(timed.attempt.questionId).lean() : todaysQuestion;
   if (!question || question.status !== "PUBLISHED") throw new AppError("QUESTION_NOT_AVAILABLE");
   if (params.expectedQuestionId && params.expectedQuestionId !== String(question._id)) throw new AppError("QUESTION_EXPIRED");
   const multiSelect = correctIdsOf(question).length > 1;

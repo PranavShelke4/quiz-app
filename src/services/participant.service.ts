@@ -132,13 +132,17 @@ export async function ensureMissedRecords(
 }
 
 /** Lazy self-healing for one user: fills any closed-day gaps (e.g. if cron didn't run). */
-export async function repairUserMissedDays(comp: ICompetition, userId: Types.ObjectId, at: Date = now()) {
+/** Returns true when records were added. Pass `recordedDays` when the caller already loaded them. */
+export async function repairUserMissedDays(comp: ICompetition, userId: Types.ObjectId, at: Date = now(), recordedDays?: readonly number[]): Promise<boolean> {
   const throughDay = lastRolloverDay(comp, at);
-  if (throughDay < 1) return;
-  const recorded = await DailyAnswer.countDocuments({ competitionId: comp._id, userId, dayNumber: { $lte: throughDay } });
-  if (recorded >= throughDay) return;
+  if (throughDay < 1) return false;
+  const recorded = recordedDays
+    ? recordedDays.filter((d) => d <= throughDay).length
+    : await DailyAnswer.countDocuments({ competitionId: comp._id, userId, dayNumber: { $lte: throughDay } });
+  if (recorded >= throughDay) return false;
   const affected = await ensureMissedRecords(comp, { throughDay, userIds: [userId] });
   if (affected.length) await recalculateParticipantStats(comp, userId, { at });
+  return affected.length > 0;
 }
 
 export async function getParticipant(competitionId: Types.ObjectId, userId: Types.ObjectId) {

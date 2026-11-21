@@ -181,14 +181,15 @@ export async function startAttempt(params: { userId: Types.ObjectId; sessionId: 
   if (!ac.enabled) throw new AppError("CONFLICT", "Timed attempts aren't enabled for this competition.");
   if (at.getTime() < window.opensAt.getTime()) throw new AppError("QUESTION_NOT_AVAILABLE");
   if (at.getTime() >= window.closesAt.getTime()) throw new AppError("QUESTION_EXPIRED");
-  const user = await User.findById(params.userId).select("isActive").lean();
+  const [user, answered, existing] = await Promise.all([
+    User.findById(params.userId).select("isActive").lean(),
+    DailyAnswer.findOne({ competitionId: comp._id, userId: params.userId, dayNumber }).select("status").lean(),
+    QuizAttempt.findOne({ competitionId: comp._id, userId: params.userId, dayNumber }).lean(),
+  ]);
   if (!user?.isActive) throw new AppError("USER_DISABLED");
-
-  const answered = await DailyAnswer.findOne({ competitionId: comp._id, userId: params.userId, dayNumber }).select("status").lean();
   // A make-up day already carries its MISSED record; that is what the attempt replaces.
   if (answered && !(makeup && answered.status === "MISSED")) throw new AppError(answered.status === "ANSWERED" ? "ANSWER_ALREADY_SUBMITTED" : "ATTEMPT_LOCKED");
 
-  const existing = await QuizAttempt.findOne({ competitionId: comp._id, userId: params.userId, dayNumber }).lean();
   // A running attempt keeps its question; a new one gets this participant's pool version.
   const question = existing ? await Question.findById(existing.questionId).lean() : await questionForParticipant(comp, dayNumber, params.userId);
   if (!question) throw new AppError("QUESTION_NOT_AVAILABLE");
@@ -270,8 +271,13 @@ export async function prepareAttemptSubmission(params: {
   sessionId: Types.ObjectId | null;
   displayIds: string[];
   at: Date;
+  /** This day's attempt if the caller already read it (null = none exists). */
+  prefetched?: IQuizAttempt | null;
 }) {
-  const found = await QuizAttempt.findOne({ competitionId: params.comp._id, userId: params.userId, dayNumber: params.dayNumber }).lean();
+  const found =
+    params.prefetched !== undefined
+      ? params.prefetched
+      : await QuizAttempt.findOne({ competitionId: params.comp._id, userId: params.userId, dayNumber: params.dayNumber }).lean();
   if (!found) throw new AppError("ATTEMPT_REQUIRED");
   const attempt = await expireIfDue(params.comp, found, params.at);
   if (attempt.status === "SUBMITTED") throw new AppError("ANSWER_ALREADY_SUBMITTED");

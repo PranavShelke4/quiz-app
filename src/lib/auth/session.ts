@@ -3,7 +3,7 @@ import { connectDb } from "@/lib/db/mongoose";
 import { randomToken, sha256 } from "@/lib/security/crypto";
 import type { RequestMeta } from "@/lib/security/request-meta";
 import { now } from "@/lib/time/clock";
-import { Session, type SessionKind } from "@/models/Session";
+import { Session, type ISession, type SessionKind } from "@/models/Session";
 import { User, type IUser, type Role } from "@/models/User";
 import { getSettings } from "@/services/settings.service";
 
@@ -136,13 +136,27 @@ export async function validateSessionToken(token: string | undefined | null): Pr
   if (!token || token.length < 20 || token.length > 200) return null;
   await connectDb();
   const t = now();
-  const session = await Session.findOne({ tokenHash: sha256(token) }).lean();
-  if (!session || session.revokedAt) return null;
+  // Session + user in one round trip; this runs on every authenticated request.
+  type SessionUserRow = Pick<IUser, "_id" | "name" | "email" | "role" | "avatar" | "isActive" | "sessionsInvalidatedAt">;
+  const [row] = await Session.aggregate<ISession & { user: SessionUserRow[] }>([
+    { $match: { tokenHash: sha256(token) } },
+    { $limit: 1 },
+    {
+      $lookup: {
+        from: User.collection.collectionName,
+        localField: "userId",
+        foreignField: "_id",
+        as: "user",
+        pipeline: [{ $project: { name: 1, email: 1, role: 1, avatar: 1, isActive: 1, sessionsInvalidatedAt: 1 } }],
+      },
+    },
+  ]);
+  if (!row) return null;
+  const { user: users, ...session } = row;
+  if (session.revokedAt) return null;
   if (session.expiresAt.getTime() <= t.getTime() || session.absoluteExpiresAt.getTime() <= t.getTime()) return null;
 
-  const user = await User.findById(session.userId)
-    .select("name email role avatar isActive sessionsInvalidatedAt")
-    .lean();
+  const user = users[0];
   if (!user || !user.isActive) return null;
   if (user.sessionsInvalidatedAt && session.createdAt.getTime() < user.sessionsInvalidatedAt.getTime()) return null;
   // An ADMIN session for a user who is no longer an admin is dead.
